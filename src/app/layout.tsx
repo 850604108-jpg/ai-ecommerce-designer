@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 
+import { Analytics } from "@vercel/analytics/next";
+
 import { SiteHeader } from "@/components/layout/site-header";
 import { getAppUrl } from "@/lib/app-url";
 
@@ -50,6 +52,7 @@ export default function RootLayout({
       <body>
         <SiteHeader />
         <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">{children}</main>
+        <Analytics />
       </body>
     </html>
   );
