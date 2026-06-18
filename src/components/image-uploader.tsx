@@ -201,13 +201,35 @@ function uploadToSupabaseStorage(
   });
 }
 
-async function recognizeProduct(imageUrl: string) {
+async function fileToDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onerror = () => reject(new Error("Failed to read image file."));
+    reader.onload = () => {
+      if (typeof reader.result !== "string") {
+        reject(new Error("Failed to read image file."));
+        return;
+      }
+
+      resolve(reader.result);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function recognizeProductFromPayload(input: {
+  imageDataUrl?: string;
+  imageUrl: string;
+}) {
   const response = await fetch("/api/product-recognition", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ imageUrl }),
+    body: JSON.stringify(input),
   });
-  const payload = (await response.json()) as {
+  const payload = (await response
+    .json()
+    .catch(() => ({ error: "Product recognition returned an invalid response." }))) as {
     error?: string;
     recognition?: ProductRecognitionResult;
   };
@@ -527,7 +549,12 @@ export function ImageUploader() {
     setRecognitionStatus("recognizing");
 
     try {
-      const recognition = await recognizeProduct(uploadResult.imageUrl);
+      const imageDataUrl =
+        file.size <= 3 * 1024 * 1024 ? await fileToDataUrl(file) : undefined;
+      const recognition = await recognizeProductFromPayload({
+        imageDataUrl,
+        imageUrl: uploadResult.imageUrl,
+      });
       setResult({ ...uploadResult, recognition });
       setRecognitionStatus("success");
       await handlePromptGeneration(recognition, selectedPlatform);

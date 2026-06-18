@@ -15,8 +15,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
     }
 
-    const body = (await request.json()) as { imageUrl?: unknown };
+    const body = (await request.json()) as {
+      imageDataUrl?: unknown;
+      imageUrl?: unknown;
+    };
     const imageUrl = typeof body.imageUrl === "string" ? body.imageUrl : "";
+    const imageDataUrl =
+      typeof body.imageDataUrl === "string" ? body.imageDataUrl : "";
+    const recognitionImageUrl =
+      imageDataUrl.startsWith("data:image/") && URL.canParse(imageDataUrl)
+        ? imageDataUrl
+        : imageUrl;
 
     if (!imageUrl || !URL.canParse(imageUrl)) {
       return NextResponse.json(
@@ -26,7 +35,7 @@ export async function POST(request: Request) {
     }
 
     const { model, rawResponse, recognition } =
-      await recognizeProductFromImage(imageUrl);
+      await recognizeProductFromImage(recognitionImageUrl);
 
     const { data, error } = await supabase
       .from("product_recognitions")
