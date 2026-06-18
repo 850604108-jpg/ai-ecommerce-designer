@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
 
-import { getAppUrl } from "@/lib/alipay";
+import { getAppUrl } from "@/lib/app-url";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const appUrl = getAppUrl();

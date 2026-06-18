@@ -2,7 +2,7 @@ type EnvironmentCheck = {
   key: string;
   message: string;
   ok: boolean;
-  scope: "alipay" | "database" | "openai" | "supabase" | "vercel";
+  scope: "credits" | "database" | "openai" | "supabase" | "vercel";
 };
 
 type EnvironmentCheckInput = {
@@ -15,12 +15,6 @@ const requiredEnvKeys = [
   "NEXT_PUBLIC_SUPABASE_URL",
   "NEXT_PUBLIC_SUPABASE_ANON_KEY",
   "SUPABASE_SERVICE_ROLE_KEY",
-  "ALIPAY_APP_ID",
-  "ALIPAY_PRIVATE_KEY",
-  "ALIPAY_PUBLIC_KEY",
-  "ALIPAY_STARTER_AMOUNT",
-  "ALIPAY_GROWTH_AMOUNT",
-  "ALIPAY_PRO_AMOUNT",
   "OPENAI_API_KEY",
 ] as const;
 
@@ -31,6 +25,7 @@ export const deploymentEnvKeys = [
   "OPENAI_VISION_MODEL",
   "OPENAI_PROMPT_ENGINE_MODEL",
   "OPENAI_PROMPT_ENGINE_ENABLED",
+  "DAILY_CHECK_IN_CREDITS",
   "HEALTHCHECK_TOKEN",
 ] as const;
 
@@ -61,10 +56,6 @@ function checkPrefix(value: string | undefined, prefixes: string[]) {
   return Boolean(value && prefixes.some((prefix) => value.startsWith(prefix)));
 }
 
-function isMoneyAmount(value: string | undefined) {
-  return Boolean(value && /^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(value));
-}
-
 export function validateDeploymentEnvironment({
   env = process.env,
   nodeEnv = process.env.NODE_ENV,
@@ -79,9 +70,7 @@ export function validateDeploymentEnvironment({
           ? key === "NEXT_PUBLIC_SUPABASE_URL"
             ? "database"
             : "supabase"
-          : key.includes("ALIPAY")
-            ? "alipay"
-            : key.includes("OPENAI")
+          : key.includes("OPENAI")
               ? "openai"
               : "vercel",
     }) satisfies EnvironmentCheck),
@@ -104,36 +93,18 @@ export function validateDeploymentEnvironment({
       scope: "database",
     },
     {
-      key: "ALIPAY_APP_ID",
-      message: "ALIPAY_APP_ID is configured.",
-      ok: hasValue(env.ALIPAY_APP_ID),
-      scope: "alipay",
-    },
-    {
-      key: "ALIPAY_PRIVATE_KEY",
-      message: "ALIPAY_PRIVATE_KEY is configured.",
-      ok: hasValue(env.ALIPAY_PRIVATE_KEY),
-      scope: "alipay",
-    },
-    {
-      key: "ALIPAY_PUBLIC_KEY",
-      message: "ALIPAY_PUBLIC_KEY is configured.",
-      ok: hasValue(env.ALIPAY_PUBLIC_KEY),
-      scope: "alipay",
-    },
-    ...(["ALIPAY_STARTER_AMOUNT", "ALIPAY_GROWTH_AMOUNT", "ALIPAY_PRO_AMOUNT"] as const).map(
-      (key) => ({
-        key,
-        message: `${key} should be a valid CNY amount.`,
-        ok: isMoneyAmount(env[key]),
-        scope: "alipay",
-      }) satisfies EnvironmentCheck,
-    ),
-    {
       key: "OPENAI_API_KEY",
       message: "OPENAI_API_KEY should use an OpenAI project or user key prefix.",
       ok: checkPrefix(env.OPENAI_API_KEY, ["sk-", "sk-proj-"]),
       scope: "openai",
+    },
+    {
+      key: "DAILY_CHECK_IN_CREDITS",
+      message: "DAILY_CHECK_IN_CREDITS should be a positive integer when set.",
+      ok:
+        !hasValue(env.DAILY_CHECK_IN_CREDITS) ||
+        /^[1-9]\d*$/.test(env.DAILY_CHECK_IN_CREDITS || ""),
+      scope: "credits",
     },
   ];
   const failures = checks.filter((check) => !check.ok);

@@ -1,6 +1,6 @@
 # Vercel Production Deployment
 
-This app is ready for Vercel with Supabase, Stripe, and OpenAI configured through environment variables.
+This app is ready for Vercel with Supabase and OpenAI configured through environment variables. Online payments are disabled; users receive credits through daily check-in.
 
 ## 1. Required Environment Variables
 
@@ -12,17 +12,13 @@ Add these variables in Vercel Project Settings > Environment Variables for Produ
 | `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL. |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anon public key. |
 | `NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET` | No | Upload bucket for source product photos. Defaults to `product-images`. |
-| `SUPABASE_SERVICE_ROLE_KEY` | Yes | Server-only key for admin dashboards and Stripe webhook credit grants. |
-| `STRIPE_SECRET_KEY` | Yes | Use `sk_live_...` for production. |
-| `STRIPE_WEBHOOK_SECRET` | Yes | Use the Vercel production webhook endpoint signing secret. |
-| `STRIPE_STARTER_PRICE_ID` | Yes | Stripe Price ID for the Starter credit pack. |
-| `STRIPE_GROWTH_PRICE_ID` | Yes | Stripe Price ID for the Growth credit pack. |
-| `STRIPE_PRO_PRICE_ID` | Yes | Stripe Price ID for the Pro credit pack. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Yes | Server-only key for admin dashboards and daily check-in credit grants. |
 | `OPENAI_API_KEY` | Yes | OpenAI API key with image and vision model access. |
-| `OPENAI_IMAGE_MODEL` | No | Defaults to `gpt-image-1`. |
+| `OPENAI_IMAGE_MODEL` | No | Defaults to `gpt-image-2`. |
 | `OPENAI_VISION_MODEL` | No | Defaults to `gpt-5.5`. |
 | `OPENAI_PROMPT_ENGINE_MODEL` | No | Defaults to `OPENAI_VISION_MODEL`, then `gpt-5.5`. |
 | `OPENAI_PROMPT_ENGINE_ENABLED` | No | Set to `false` to use the deterministic local Prompt Engine only. Defaults to enabled. |
+| `DAILY_CHECK_IN_CREDITS` | No | Daily check-in reward amount. Defaults to `10`. |
 | `HEALTHCHECK_TOKEN` | Recommended | Protects `/api/health/deployment` with `Authorization: Bearer <token>`. |
 
 Use [.env.example](../.env.example) as the source template. Do not commit real secrets.
@@ -41,20 +37,14 @@ Use [.env.example](../.env.example) as the source template. Do not commit real s
 
 Database connection is checked at runtime by `/api/health/deployment` when Supabase server credentials are present.
 
-## 3. Stripe Setup
+## 3. Credit Setup
 
-1. Create three one-time payment Prices in Stripe for Starter, Growth, and Pro credit packs.
-2. Copy their Price IDs into:
-   - `STRIPE_STARTER_PRICE_ID`
-   - `STRIPE_GROWTH_PRICE_ID`
-   - `STRIPE_PRO_PRICE_ID`
-3. Create a production webhook endpoint:
-   - URL: `https://your-domain.com/api/stripe/webhook`
-   - Events: `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.expired`
-4. Copy the webhook signing secret into `STRIPE_WEBHOOK_SECRET`.
-5. Use a live secret key in production.
+Payments are disabled. Users receive credits through the account page daily check-in button.
 
-The checkout route creates pending payment records. The webhook grants credits idempotently through `grant_payment_credits`.
+1. Set `DAILY_CHECK_IN_CREDITS` if you want a reward other than `10`.
+2. Daily check-in uses the Asia/Shanghai date.
+3. Each user can check in once per day.
+4. Grants are written to the `credits` ledger with a unique daily idempotency key.
 
 ## 4. OpenAI Setup
 
@@ -130,9 +120,8 @@ Before launch, add real social preview images under `public/` and wire them into
 - Supabase migrations have been applied successfully.
 - Supabase storage buckets exist and policies allow intended upload/read flows.
 - Supabase Auth redirect URLs include the Vercel production URL.
-- Stripe live prices are configured.
-- Stripe production webhook points to `/api/stripe/webhook`.
+- Daily check-in reward is configured, or the default `10` credits is acceptable.
 - OpenAI key has access to the configured models.
 - `npm run lint`, `npm run build`, and `npm run typecheck` pass.
 - `/api/health/deployment` returns `ok: true`.
-- A real user can register, upload a product image, generate prompts, buy credits, and generate images.
+- A real user can register, check in for credits, upload a product image, generate prompts, and generate images.

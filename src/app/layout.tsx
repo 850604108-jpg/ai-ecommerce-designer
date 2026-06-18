@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 import { SiteHeader } from "@/components/layout/site-header";
-import { getAppUrl } from "@/lib/alipay";
+import { getAppUrl } from "@/lib/app-url";
 
 import "./globals.css";
 

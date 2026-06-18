@@ -1,6 +1,6 @@
 # AI Ecommerce Designer
 
-AI Ecommerce Designer is a production-ready Next.js app for ecommerce creative workflows. It lets users upload a product photo, recognize product details with OpenAI, generate marketplace-specific prompts, create AI product images, manage generated image history, and buy credits through Stripe.
+AI Ecommerce Designer is a production-ready Next.js app for ecommerce creative workflows. It lets users upload a product photo, recognize product details with OpenAI, generate marketplace-specific prompts, create AI product images, manage generated image history, and receive credits through daily check-in.
 
 ## Stack
 
@@ -8,7 +8,6 @@ AI Ecommerce Designer is a production-ready Next.js app for ecommerce creative w
 - React 19
 - TypeScript
 - Supabase Auth, Postgres, and Storage
-- Stripe Checkout and webhooks
 - OpenAI Responses and Images APIs
 - Vercel deployment target
 
@@ -19,8 +18,7 @@ AI Ecommerce Designer is a production-ready Next.js app for ecommerce creative w
 - AI product recognition from uploaded images.
 - Prompt generation for Taobao, Tmall, Pinduoduo, JD, Douyin, Kuaishou, and WeChat Store.
 - AI generation for main images, lifestyle images, infographics, and detail page modules.
-- Credit ledger with spend, refund, and payment grant records.
-- Stripe credit-pack checkout and webhook processing.
+- Credit ledger with daily check-in grants, spend records, and refunds.
 - Dashboard with generated image history, search, pagination, copy, regenerate, and soft delete.
 - Admin dashboard for users, projects, payments, credits, and templates.
 - Template marketplace and admin template management.
@@ -40,7 +38,7 @@ Create local environment variables:
 cp .env.example .env.local
 ```
 
-Fill in Supabase, Stripe, OpenAI, and app URL values in `.env.local`.
+Fill in Supabase, OpenAI, and app URL values in `.env.local`.
 
 Run the development server:
 
@@ -60,11 +58,6 @@ Required for production:
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `STRIPE_SECRET_KEY`
-- `STRIPE_WEBHOOK_SECRET`
-- `STRIPE_STARTER_PRICE_ID`
-- `STRIPE_GROWTH_PRICE_ID`
-- `STRIPE_PRO_PRICE_ID`
 - `OPENAI_API_KEY`
 
 Recommended:
@@ -72,6 +65,9 @@ Recommended:
 - `NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET`
 - `OPENAI_IMAGE_MODEL`
 - `OPENAI_VISION_MODEL`
+- `OPENAI_PROMPT_ENGINE_MODEL`
+- `OPENAI_PROMPT_ENGINE_ENABLED`
+- `DAILY_CHECK_IN_CREDITS`
 - `HEALTHCHECK_TOKEN`
 
 ## Database

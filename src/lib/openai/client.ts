@@ -17,7 +17,7 @@ export type OpenAIResponsesPayload = {
 };
 
 export const defaultOpenAIImageModel =
-  process.env.OPENAI_IMAGE_MODEL || "gpt-image-1";
+  process.env.OPENAI_IMAGE_MODEL || "gpt-image-2";
 export const defaultOpenAIVisionModel =
   process.env.OPENAI_VISION_MODEL || "gpt-5.5";
 export const defaultOpenAIPromptModel =

@@ -1,13 +1,40 @@
+import { existsSync, readFileSync } from "node:fs";
+
+function loadEnvFile(path) {
+  if (!existsSync(path)) {
+    return;
+  }
+
+  const content = readFileSync(path, "utf8");
+
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim();
+
+    if (!trimmed || trimmed.startsWith("#") || !trimmed.includes("=")) {
+      continue;
+    }
+
+    const index = trimmed.indexOf("=");
+    const key = trimmed.slice(0, index).trim();
+    const rawValue = trimmed.slice(index + 1).trim();
+    const value = rawValue
+      .replace(/^['"]|['"]$/g, "")
+      .replace(/\\n/g, "\n");
+
+    if (!process.env[key]) {
+      process.env[key] = value;
+    }
+  }
+}
+
+loadEnvFile(".env.local");
+loadEnvFile(".env");
+
 const required = [
   "NEXT_PUBLIC_APP_URL",
   "NEXT_PUBLIC_SUPABASE_URL",
   "NEXT_PUBLIC_SUPABASE_ANON_KEY",
   "SUPABASE_SERVICE_ROLE_KEY",
-  "STRIPE_SECRET_KEY",
-  "STRIPE_WEBHOOK_SECRET",
-  "STRIPE_STARTER_PRICE_ID",
-  "STRIPE_GROWTH_PRICE_ID",
-  "STRIPE_PRO_PRICE_ID",
   "OPENAI_API_KEY",
 ];
 
@@ -15,6 +42,9 @@ const optional = [
   "NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET",
   "OPENAI_IMAGE_MODEL",
   "OPENAI_VISION_MODEL",
+  "OPENAI_PROMPT_ENGINE_MODEL",
+  "OPENAI_PROMPT_ENGINE_ENABLED",
+  "DAILY_CHECK_IN_CREDITS",
   "HEALTHCHECK_TOKEN",
 ];
 
@@ -67,13 +97,19 @@ const shapeChecks = [
       ),
     "must be a Supabase project URL",
   ],
-  ["STRIPE_SECRET_KEY", hasPrefix("STRIPE_SECRET_KEY", ["sk_live_", "sk_test_"]), "must start with sk_live_ or sk_test_"],
-  ["STRIPE_WEBHOOK_SECRET", hasPrefix("STRIPE_WEBHOOK_SECRET", ["whsec_"]), "must start with whsec_"],
-  ["STRIPE_STARTER_PRICE_ID", hasPrefix("STRIPE_STARTER_PRICE_ID", ["price_"]), "must start with price_"],
-  ["STRIPE_GROWTH_PRICE_ID", hasPrefix("STRIPE_GROWTH_PRICE_ID", ["price_"]), "must start with price_"],
-  ["STRIPE_PRO_PRICE_ID", hasPrefix("STRIPE_PRO_PRICE_ID", ["price_"]), "must start with price_"],
   ["OPENAI_API_KEY", hasPrefix("OPENAI_API_KEY", ["sk-", "sk-proj-"]), "must start with sk- or sk-proj-"],
 ];
+
+if (
+  hasValue("DAILY_CHECK_IN_CREDITS") &&
+  !/^[1-9]\d*$/.test(process.env.DAILY_CHECK_IN_CREDITS || "")
+) {
+  shapeChecks.push([
+    "DAILY_CHECK_IN_CREDITS",
+    false,
+    "must be a positive integer",
+  ]);
+}
 
 for (const [key, passed, message] of shapeChecks) {
   if (passed) {

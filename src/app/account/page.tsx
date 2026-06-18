@@ -1,40 +1,28 @@
 import Link from "next/link";
 
-import { CheckoutButton } from "@/components/billing/checkout-button";
+import { DailyCheckInButton } from "@/components/account/daily-check-in-button";
 import { Button } from "@/components/ui/button";
-import { getUserCreditBalance } from "@/lib/credits";
-import { creditPacks } from "@/lib/alipay";
+import {
+  dailyCheckInCredits,
+  getDailyCheckInStatus,
+  getUserCreditBalance,
+} from "@/lib/credits";
 import { supabaseServer, isSupabaseConfigured } from "@/lib/supabaseClient";
 
-type AccountPageProps = {
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
-};
-
-function getCheckoutStatus(
-  searchParams: Record<string, string | string[] | undefined>,
-) {
-  const value = searchParams.checkout;
-
-  return Array.isArray(value) ? value[0] : value;
-}
-
-export default async function AccountPage({ searchParams }: AccountPageProps) {
-  const params = (await searchParams) || {};
-  const checkoutStatus = getCheckoutStatus(params);
+export default async function AccountPage() {
   const supabase = isSupabaseConfigured() ? await supabaseServer() : null;
   const user = supabase ? (await supabase.auth.getUser()).data.user : null;
   const creditBalance =
     supabase && user ? await getUserCreditBalance(supabase, user.id) : null;
-  const payments =
+  const checkInStatus = user ? await getDailyCheckInStatus(user.id) : null;
+  const credits =
     supabase && user
       ? await supabase
-          .from("payments")
-          .select(
-            "id,status,amount_cents,currency,credits_purchased,paid_at,created_at",
-          )
+          .from("credits")
+          .select("id,transaction_type,amount,balance_after,metadata,created_at")
           .eq("user_id", user.id)
           .order("created_at", { ascending: false })
-          .limit(8)
+          .limit(12)
       : null;
 
   return (
@@ -45,18 +33,6 @@ export default async function AccountPage({ searchParams }: AccountPageProps) {
         </p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight">Account</h1>
       </div>
-
-      {checkoutStatus === "success" ? (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
-          Payment submitted. Credits will update after Alipay confirms payment.
-        </div>
-      ) : null}
-
-      {checkoutStatus === "cancelled" ? (
-        <div className="rounded-lg border bg-muted p-4 text-sm text-muted-foreground">
-          Checkout cancelled.
-        </div>
-      ) : null}
 
       <div className="rounded-lg border bg-card p-6">
         <h2 className="text-base font-medium">Account details</h2>
@@ -93,60 +69,73 @@ export default async function AccountPage({ searchParams }: AccountPageProps) {
 
       {user ? (
         <>
-          <div className="grid gap-4 md:grid-cols-3">
-            {creditPacks.map((pack) => (
-              <div className="rounded-lg border bg-card p-6" key={pack.code}>
-                <div className="space-y-2">
-                  <h2 className="text-lg font-semibold">{pack.name}</h2>
-                  <p className="text-3xl font-semibold">{pack.credits}</p>
-                  <p className="text-sm text-muted-foreground">Credits</p>
-                </div>
-                <div className="mt-6">
-                  <CheckoutButton pack={pack.code} />
-                </div>
+          <div className="rounded-lg border bg-card p-6">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h2 className="text-base font-medium">每日签到</h2>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  每天可领取 {dailyCheckInCredits} 积分，用于生成图片。
+                </p>
               </div>
-            ))}
+              <DailyCheckInButton
+                checkedIn={Boolean(checkInStatus?.checkedIn)}
+                credits={dailyCheckInCredits}
+              />
+            </div>
           </div>
 
           <div className="rounded-lg border bg-card p-6">
-            <h2 className="text-base font-medium">Payment records</h2>
-            {payments?.data?.length ? (
+            <h2 className="text-base font-medium">积分流水</h2>
+            {credits?.data?.length ? (
               <div className="mt-4 overflow-x-auto">
                 <table className="w-full min-w-[640px] text-left text-sm">
                   <thead className="border-b text-xs uppercase text-muted-foreground">
                     <tr>
-                      <th className="py-2 pr-4 font-medium">Status</th>
-                      <th className="py-2 pr-4 font-medium">Credits</th>
-                      <th className="py-2 pr-4 font-medium">Amount</th>
-                      <th className="py-2 pr-4 font-medium">Date</th>
+                      <th className="py-2 pr-4 font-medium">类型</th>
+                      <th className="py-2 pr-4 font-medium">变动</th>
+                      <th className="py-2 pr-4 font-medium">余额</th>
+                      <th className="py-2 pr-4 font-medium">说明</th>
+                      <th className="py-2 pr-4 font-medium">时间</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {payments.data.map((payment) => (
-                      <tr key={payment.id}>
-                        <td className="py-3 pr-4 capitalize">
-                          {payment.status}
-                        </td>
-                        <td className="py-3 pr-4">
-                          {payment.credits_purchased}
-                        </td>
-                        <td className="py-3 pr-4">
-                          {(payment.amount_cents / 100).toFixed(2)}{" "}
-                          {payment.currency}
-                        </td>
+                    {credits.data.map((credit) => {
+                      const metadata = (credit.metadata || {}) as Record<
+                        string,
+                        unknown
+                      >;
+                      const source =
+                        metadata.source === "daily_check_in"
+                          ? "每日签到"
+                          : metadata.reason || metadata.image_type || "-";
+
+                      return (
+                        <tr key={credit.id}>
+                          <td className="py-3 pr-4 capitalize">
+                            {credit.transaction_type}
+                          </td>
+                          <td className="py-3 pr-4">
+                            {credit.amount > 0 ? "+" : ""}
+                            {credit.amount}
+                          </td>
+                          <td className="py-3 pr-4">
+                            {credit.balance_after}
+                          </td>
+                          <td className="py-3 pr-4 text-muted-foreground">
+                            {String(source)}
+                          </td>
                         <td className="py-3 pr-4 text-muted-foreground">
-                          {new Date(
-                            payment.paid_at || payment.created_at,
-                          ).toLocaleString()}
+                          {new Date(credit.created_at).toLocaleString()}
                         </td>
-                      </tr>
-                    ))}
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
             ) : (
               <p className="mt-3 text-sm text-muted-foreground">
-                No payment records yet.
+                暂无积分流水，完成首次签到后会显示在这里。
               </p>
             )}
           </div>
