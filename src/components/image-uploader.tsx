@@ -63,6 +63,14 @@ type ProductRecognitionResult = {
   created_at: string;
 };
 
+const emptyPromptOutput: PromptEngineOutput = {
+  detailPageModules: [],
+  detailPagePrompt: "",
+  infographicPrompt: "",
+  lifestylePrompt: "",
+  mainImagePrompt: "",
+};
+
 type RecognitionState = "idle" | "recognizing" | "success" | "error";
 
 type PromptState = "idle" | "generating" | "success" | "error";
@@ -238,7 +246,61 @@ async function recognizeProductFromPayload(input: {
     throw new Error(payload.error || "Product recognition failed.");
   }
 
-  return payload.recognition;
+  return {
+    ...payload.recognition,
+    highlights: Array.isArray(payload.recognition.highlights)
+      ? payload.recognition.highlights
+      : [],
+  };
+}
+
+function normalizePromptOutput(value: unknown): PromptEngineOutput {
+  const record =
+    value && typeof value === "object"
+      ? (value as Record<string, unknown>)
+      : {};
+  const detailPageModules = Array.isArray(record.detailPageModules)
+    ? record.detailPageModules
+        .map((item, index) => {
+          const moduleRecord =
+            item && typeof item === "object"
+              ? (item as Record<string, unknown>)
+              : {};
+          const id =
+            typeof moduleRecord.id === "string"
+              ? moduleRecord.id
+              : `AD-${String(index + 1).padStart(2, "0")}`;
+
+          return {
+            description:
+              typeof moduleRecord.description === "string"
+                ? moduleRecord.description
+                : "",
+            id,
+            imagePrompt:
+              typeof moduleRecord.imagePrompt === "string"
+                ? moduleRecord.imagePrompt
+                : "",
+            title:
+              typeof moduleRecord.title === "string" ? moduleRecord.title : id,
+          };
+        })
+        .filter((module) => module.imagePrompt.trim())
+    : [];
+
+  return {
+    detailPageModules,
+    detailPagePrompt:
+      typeof record.detailPagePrompt === "string" ? record.detailPagePrompt : "",
+    infographicPrompt:
+      typeof record.infographicPrompt === "string"
+        ? record.infographicPrompt
+        : "",
+    lifestylePrompt:
+      typeof record.lifestylePrompt === "string" ? record.lifestylePrompt : "",
+    mainImagePrompt:
+      typeof record.mainImagePrompt === "string" ? record.mainImagePrompt : "",
+  };
 }
 
 async function generatePrompts(
@@ -255,16 +317,18 @@ async function generatePrompts(
       highlights: recognition.highlights,
     }),
   });
-  const payload = (await response.json()) as {
+  const payload = (await response.json().catch(() => ({
+    error: "Prompt generation returned an invalid response.",
+  }))) as {
     error?: string;
-    prompts?: PromptEngineOutput;
+    prompts?: unknown;
   };
 
   if (!response.ok || !payload.prompts) {
     throw new Error(payload.error || "Prompt generation failed.");
   }
 
-  return payload.prompts;
+  return normalizePromptOutput(payload.prompts);
 }
 
 async function queueGeneratedImage(input: {
@@ -356,7 +420,7 @@ async function refreshGeneratedImages(jobIds: string[]) {
 }
 
 function getDetailModuleId(job: GeneratedImageJob) {
-  const moduleId = job.metadata.module_id;
+  const moduleId = job.metadata?.module_id;
 
   return typeof moduleId === "string" ? moduleId : "";
 }
@@ -365,7 +429,7 @@ function getDetailPageJobs(jobs: GeneratedImageJob[]) {
   return jobs
     .filter(
       (job) =>
-        job.metadata.image_type === "detail_page_module" &&
+        job.metadata?.image_type === "detail_page_module" &&
         job.status === "completed" &&
         Boolean(job.public_url),
     )
@@ -687,7 +751,9 @@ export function ImageUploader() {
   }
 
   async function handleGenerateDetailPage() {
-    if (!prompts?.detailPageModules.length || imageQueueStatus === "queueing") {
+    const detailModules = normalizePromptOutput(prompts).detailPageModules;
+
+    if (!detailModules.length || imageQueueStatus === "queueing") {
       return;
     }
 
@@ -701,7 +767,7 @@ export function ImageUploader() {
 
     try {
       const queuedResults = await Promise.all(
-        prompts.detailPageModules.map((module) =>
+        detailModules.map((module) =>
           queueGeneratedImage({
             imageType: "detail_page_module",
             prompt: module.imagePrompt,
@@ -817,7 +883,7 @@ export function ImageUploader() {
   }
 
   function getGeneratedImageLabel(job: GeneratedImageJob) {
-    const imageType = job.metadata.image_type;
+    const imageType = job.metadata?.image_type;
 
     return typeof imageType === "string" && imageType in generatedImageTypeLabels
       ? `${generatedImageTypeLabels[imageType as GeneratedImageType]} ${
@@ -826,13 +892,16 @@ export function ImageUploader() {
       : "生成图";
   }
 
+  const normalizedPrompts = prompts
+    ? normalizePromptOutput(prompts)
+    : emptyPromptOutput;
+  const detailPageModules = normalizedPrompts.detailPageModules;
   const detailPageJobs = getDetailPageJobs(generatedImageJobs);
   const canDownloadDetailPage =
-    Boolean(prompts?.detailPageModules.length) &&
-    detailPageJobs.length === prompts?.detailPageModules.length;
+    Boolean(detailPageModules.length) &&
+    detailPageJobs.length === detailPageModules.length;
   const detailPageCreditCost =
-    (prompts?.detailPageModules.length || 0) *
-    imageGenerationCreditCosts.detail_page_module;
+    detailPageModules.length * imageGenerationCreditCosts.detail_page_module;
   const canAffordCoreImages =
     creditBalance === null || creditBalance >= coreImageCreditCost;
   const canAffordDetailPage =
@@ -1288,7 +1357,7 @@ export function ImageUploader() {
                             </p>
                           ) : null}
 
-                          {prompts.detailPageModules.map((module) => {
+                          {detailPageModules.map((module) => {
                             const job = generatedImageJobs.find(
                               (currentJob) =>
                                 getDetailModuleId(currentJob) === module.id,
@@ -1371,7 +1440,7 @@ export function ImageUploader() {
                         ) : null}
                       </div>
 
-                      {Object.entries(prompts)
+                      {Object.entries(normalizedPrompts)
                         .filter(([, value]) => typeof value === "string")
                         .map(([key, value]) => (
                         <div key={key} className="rounded-md bg-secondary p-3">
