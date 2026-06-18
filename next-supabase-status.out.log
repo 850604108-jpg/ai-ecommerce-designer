@@ -1,0 +1,15 @@
+
+> ai-ecommerce-designer@1.0.0 dev
+> next dev -p 3010
+
+   ▲ Next.js 15.5.19
+   - Local:        http://localhost:3010
+   - Network:      http://192.168.1.9:3010
+   - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 2.8s
+ ○ Compiling /api/supabase/status ...
+ ✓ Compiled /api/supabase/status in 831ms (360 modules)
+ GET /api/supabase/status 200 in 4352ms
+[?25h

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Self Healing"
+  short_description: "Run lint, build, and typecheck until green"
+  default_prompt: "Use $self-healing to validate this project after code changes until lint, build, and typecheck pass."
