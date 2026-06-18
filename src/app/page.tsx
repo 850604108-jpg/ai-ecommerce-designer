@@ -2,7 +2,6 @@ import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
-import { SupabaseDebugPanel } from "@/components/supabase-debug-panel";
 
 export default function HomePage() {
   return (
@@ -34,7 +33,6 @@ export default function HomePage() {
           <Link href="/templates">Explore Templates</Link>
         </Button>
       </div>
-      <SupabaseDebugPanel />
     </section>
   );
 }
