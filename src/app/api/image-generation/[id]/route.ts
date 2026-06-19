@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-
+import { apiError, apiOk, handleApiError } from "@/lib/api-response";
 import { softDeleteImageGenerationJob } from "@/lib/image-generation/jobs";
 import { supabaseServer } from "@/lib/supabaseClient";
 
@@ -19,7 +18,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
     } = await supabase.auth.getUser();
 
     if (authError || !user) {
-      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+      return apiError({ code: "UNAUTHORIZED", status: 401 });
     }
 
     const job = await softDeleteImageGenerationJob({
@@ -28,16 +27,8 @@ export async function DELETE(_request: Request, context: RouteContext) {
       jobId: id,
     });
 
-    return NextResponse.json({ job });
+    return apiOk({ job });
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to delete image job.",
-      },
-      { status: 500 },
-    );
+    return handleApiError(error, "Failed to delete image job.");
   }
 }

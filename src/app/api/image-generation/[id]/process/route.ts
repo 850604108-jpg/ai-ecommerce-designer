@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-
+import { apiError, apiOk, handleApiError } from "@/lib/api-response";
 import { processImageGenerationJob } from "@/lib/image-generation/jobs";
 import { getUserCreditBalance, InsufficientCreditsError } from "@/lib/credits";
 import { supabaseServer } from "@/lib/supabaseClient";
@@ -23,7 +22,7 @@ export async function POST(_request: Request, context: RouteContext) {
     } = await supabase.auth.getUser();
 
     if (authError || !user) {
-      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+      return apiError({ code: "UNAUTHORIZED", status: 401 });
     }
 
     userId = user.id;
@@ -34,21 +33,23 @@ export async function POST(_request: Request, context: RouteContext) {
     });
     const creditBalance = await getUserCreditBalance(supabase, user.id);
 
-    return NextResponse.json({ credit_balance: creditBalance, job });
+    return apiOk({ credit_balance: creditBalance, job });
   } catch (error) {
     const creditBalance = supabase && userId
       ? await getUserCreditBalance(supabase, userId).catch(() => null)
       : null;
 
-    return NextResponse.json(
-      {
-        credit_balance: creditBalance,
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to process image job.",
-      },
-      { status: error instanceof InsufficientCreditsError ? 402 : 500 },
-    );
+    if (error instanceof InsufficientCreditsError) {
+      return apiError({
+        code: "PAYMENT_REQUIRED",
+        error,
+        extra: { credit_balance: creditBalance },
+        status: 402,
+      });
+    }
+
+    return handleApiError(error, "Failed to process image job.", {
+      extra: { credit_balance: creditBalance },
+    });
   }
 }

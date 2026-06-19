@@ -56,6 +56,10 @@ function fail(label) {
   console.error(`FAIL ${label}`);
 }
 
+function warn(label) {
+  console.warn(`WARN ${label}`);
+}
+
 function hasValue(key) {
   return Boolean(process.env[key]?.trim());
 }
@@ -71,6 +75,11 @@ function canParseUrl(key) {
 }
 
 const failures = [];
+const warnings = [];
+
+function readJson(path) {
+  return JSON.parse(readFileSync(path, "utf8"));
+}
 
 for (const key of required) {
   if (hasValue(key)) {
@@ -120,12 +129,59 @@ for (const [key, passed, message] of shapeChecks) {
   }
 }
 
+if (hasValue("NEXT_PUBLIC_APP_URL") && canParseUrl("NEXT_PUBLIC_APP_URL")) {
+  const appUrl = new URL(process.env.NEXT_PUBLIC_APP_URL);
+
+  if (appUrl.protocol !== "https:" && appUrl.hostname !== "localhost") {
+    warnings.push("NEXT_PUBLIC_APP_URL should use https in Vercel production");
+    warn("NEXT_PUBLIC_APP_URL should use https in Vercel production");
+  }
+}
+
+const packageJson = existsSync("package.json") ? readJson("package.json") : null;
+const requiredScripts = ["build", "lint", "typecheck", "check:deployment"];
+
+if (!packageJson) {
+  failures.push("package.json is missing");
+  fail("package.json is missing");
+} else {
+  for (const script of requiredScripts) {
+    if (packageJson.scripts?.[script]) {
+      ok(`npm script ${script} is present`);
+    } else {
+      failures.push(`npm script ${script} is missing`);
+      fail(`npm script ${script} is missing`);
+    }
+  }
+
+  if (packageJson.dependencies?.next) {
+    ok("Next.js dependency is present");
+  } else {
+    failures.push("Next.js dependency is missing");
+    fail("Next.js dependency is missing");
+  }
+}
+
+if (existsSync("next.config.ts") || existsSync("next.config.js")) {
+  ok("Next config is present");
+} else {
+  failures.push("next.config is missing");
+  fail("next.config is missing");
+}
+
 if (failures.length) {
   console.error("\nDeployment check failed:");
   for (const failure of failures) {
     console.error(`- ${failure}`);
   }
   process.exit(1);
+}
+
+if (warnings.length) {
+  console.warn("\nDeployment warnings:");
+  for (const warning of warnings) {
+    console.warn(`- ${warning}`);
+  }
 }
 
 console.log("\nDeployment environment check passed.");

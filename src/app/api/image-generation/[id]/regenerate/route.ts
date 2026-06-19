@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-
+import { apiError, apiOk, handleApiError } from "@/lib/api-response";
 import { regenerateImageGenerationJob } from "@/lib/image-generation/jobs";
 import { getUserCreditBalance, InsufficientCreditsError } from "@/lib/credits";
 import { supabaseServer } from "@/lib/supabaseClient";
@@ -20,7 +19,7 @@ export async function POST(_request: Request, context: RouteContext) {
     } = await supabase.auth.getUser();
 
     if (authError || !user) {
-      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+      return apiError({ code: "UNAUTHORIZED", status: 401 });
     }
 
     const job = await regenerateImageGenerationJob({
@@ -30,20 +29,16 @@ export async function POST(_request: Request, context: RouteContext) {
     });
     const creditBalance = await getUserCreditBalance(supabase, user.id);
 
-    return NextResponse.json({ credit_balance: creditBalance, job });
+    return apiOk({ credit_balance: creditBalance, job });
   } catch (error) {
     if (error instanceof InsufficientCreditsError) {
-      return NextResponse.json({ error: error.message }, { status: 402 });
+      return apiError({
+        code: "PAYMENT_REQUIRED",
+        error,
+        status: 402,
+      });
     }
 
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to regenerate image job.",
-      },
-      { status: 500 },
-    );
+    return handleApiError(error, "Failed to regenerate image job.");
   }
 }

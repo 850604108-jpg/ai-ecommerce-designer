@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-
+import { apiError, apiOk, handleApiError } from "@/lib/api-response";
 import {
   deductImageGenerationCredits,
   getUserCreditBalance,
@@ -42,7 +41,7 @@ export async function POST(request: Request) {
     } = await supabase.auth.getUser();
 
     if (authError || !user) {
-      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+      return apiError({ code: "UNAUTHORIZED", status: 401 });
     }
 
     userId = user.id;
@@ -51,19 +50,19 @@ export async function POST(request: Request) {
     const generatedImageId = body.generated_image_id;
 
     if (!isDeductibleImageType(imageType)) {
-      return NextResponse.json(
-        {
-          error: "image_type must be main_image, lifestyle, or infographic.",
-        },
-        { status: 400 },
-      );
+      return apiError({
+        code: "BAD_REQUEST",
+        message: "image_type must be main_image, lifestyle, or infographic.",
+        status: 400,
+      });
     }
 
     if (typeof generatedImageId !== "string" || !generatedImageId.trim()) {
-      return NextResponse.json(
-        { error: "generated_image_id is required." },
-        { status: 400 },
-      );
+      return apiError({
+        code: "BAD_REQUEST",
+        message: "generated_image_id is required.",
+        status: 400,
+      });
     }
 
     const { data: job, error: jobError } = await supabase
@@ -75,19 +74,21 @@ export async function POST(request: Request) {
       .single();
 
     if (jobError || !job) {
-      return NextResponse.json(
-        { error: "Image generation job not found." },
-        { status: 404 },
-      );
+      return apiError({
+        code: "BAD_REQUEST",
+        message: "Image generation job not found.",
+        status: 404,
+      });
     }
 
     const jobImageType = getMetadataImageType(job.metadata);
 
     if (jobImageType && jobImageType !== imageType) {
-      return NextResponse.json(
-        { error: "image_type does not match the generation job." },
-        { status: 400 },
-      );
+      return apiError({
+        code: "BAD_REQUEST",
+        message: "image_type does not match the generation job.",
+        status: 400,
+      });
     }
 
     const result = await deductImageGenerationCredits({
@@ -98,7 +99,7 @@ export async function POST(request: Request) {
       imageType,
     });
 
-    return NextResponse.json({
+    return apiOk({
       credit_balance: result.creditBalance,
       credits_deducted: result.creditsDeducted,
       image_type: imageType,
@@ -109,13 +110,17 @@ export async function POST(request: Request) {
         ? await getUserCreditBalance(supabase, userId).catch(() => null)
         : null;
 
-    return NextResponse.json(
-      {
-        credit_balance: creditBalance,
-        error:
-          error instanceof Error ? error.message : "Failed to deduct credits.",
-      },
-      { status: error instanceof InsufficientCreditsError ? 402 : 500 },
-    );
+    if (error instanceof InsufficientCreditsError) {
+      return apiError({
+        code: "PAYMENT_REQUIRED",
+        error,
+        extra: { credit_balance: creditBalance },
+        status: 402,
+      });
+    }
+
+    return handleApiError(error, "Failed to deduct credits.", {
+      extra: { credit_balance: creditBalance },
+    });
   }
 }

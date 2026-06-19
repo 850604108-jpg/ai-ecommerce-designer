@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-
+import { apiError, apiOk, handleApiError } from "@/lib/api-response";
 import { recognizeProductFromImage } from "@/lib/product-recognition";
 import { supabaseServer } from "@/lib/supabaseClient";
 
@@ -12,7 +11,7 @@ export async function POST(request: Request) {
     } = await supabase.auth.getUser();
 
     if (authError || !user) {
-      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+      return apiError({ code: "UNAUTHORIZED", status: 401 });
     }
 
     const body = (await request.json()) as {
@@ -28,10 +27,11 @@ export async function POST(request: Request) {
         : imageUrl;
 
     if (!imageUrl || !URL.canParse(imageUrl)) {
-      return NextResponse.json(
-        { error: "A valid imageUrl is required." },
-        { status: 400 },
-      );
+      return apiError({
+        code: "BAD_REQUEST",
+        message: "A valid imageUrl is required.",
+        status: 400,
+      });
     }
 
     const { model, rawResponse, recognition } =
@@ -55,19 +55,11 @@ export async function POST(request: Request) {
       .single();
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return apiError({ error, status: 500 });
     }
 
-    return NextResponse.json({ recognition: data });
+    return apiOk({ recognition: data });
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Product recognition failed.",
-      },
-      { status: 500 },
-    );
+    return handleApiError(error, "Product recognition failed.");
   }
 }

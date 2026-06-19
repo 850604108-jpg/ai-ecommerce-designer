@@ -22,7 +22,7 @@ export const generatedImagesBucket = "generated-images";
 const defaultImageModel = defaultOpenAIImageModel;
 const defaultSize = "1024x1024";
 const defaultQuality = "medium";
-const defaultOutputFormat = "png";
+const defaultOutputFormat = "webp";
 const historySelect =
   "id,project_id,prompt,model,storage_bucket,storage_path,status,width,height,credits_spent,error_message,generation_params,metadata,created_at,updated_at,project:projects(id,name,description,status,created_at)";
 const jobSelect =

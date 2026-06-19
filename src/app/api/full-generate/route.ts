@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-
+import { apiError, apiOk } from "@/lib/api-response";
 import { getUserCreditBalance, InsufficientCreditsError } from "@/lib/credits";
 import {
   processImageGenerationJob,
@@ -258,7 +257,7 @@ export async function POST(request: Request) {
     } = await supabase.auth.getUser();
 
     if (authError || !user) {
-      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+      return apiError({ code: "UNAUTHORIZED", status: 401 });
     }
 
     userId = user.id;
@@ -270,17 +269,19 @@ export async function POST(request: Request) {
     const platform = isEcommercePlatform(rawPlatform) ? rawPlatform : "taobao";
 
     if (requestedUserId !== user.id) {
-      return NextResponse.json(
-        { error: "user_id must match the authenticated user." },
-        { status: 403 },
-      );
+      return apiError({
+        code: "FORBIDDEN",
+        message: "user_id must match the authenticated user.",
+        status: 403,
+      });
     }
 
     if (!(image instanceof File)) {
-      return NextResponse.json(
-        { error: "image file is required." },
-        { status: 400 },
-      );
+      return apiError({
+        code: "BAD_REQUEST",
+        message: "image file is required.",
+        status: 400,
+      });
     }
 
     projectId = await createWorkflowProject(supabase, user.id);
@@ -492,7 +493,7 @@ export async function POST(request: Request) {
       metadata: { image_count: images.length, credit_balance: creditBalance },
     });
 
-    return NextResponse.json({ project_id: projectId, images });
+    return apiOk({ project_id: projectId, images });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Full generation failed.";
@@ -521,14 +522,19 @@ export async function POST(request: Request) {
       });
     }
 
-    return NextResponse.json(
-      {
+    return apiError({
+      code:
+        error instanceof InsufficientCreditsError
+          ? "PAYMENT_REQUIRED"
+          : "INTERNAL_ERROR",
+      error,
+      extra: {
         project_id: projectId,
         images,
-        error: message,
         recoverable: Boolean(projectId),
       },
-      { status: error instanceof InsufficientCreditsError ? 402 : 500 },
-    );
+      message,
+      status: error instanceof InsufficientCreditsError ? 402 : 500,
+    });
   }
 }

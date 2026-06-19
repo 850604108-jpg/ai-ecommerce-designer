@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-
+import { apiOk, handleApiError } from "@/lib/api-response";
 import {
   ecommercePlatforms,
   generatePromptSet,
@@ -44,20 +43,12 @@ export async function POST(request: Request) {
             prompts: deterministicPrompts,
           });
 
-    return NextResponse.json({
+    return apiOk({
       platform: resolvedPlatform,
       supportedPlatforms: ecommercePlatforms,
       prompts,
     });
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Prompt generation failed.",
-      },
-      { status: 400 },
-    );
+    return handleApiError(error, "Prompt generation failed.", { status: 400 });
   }
 }

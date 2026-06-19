@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-
+import { apiError, apiOk, handleApiError } from "@/lib/api-response";
 import {
   getDailyCheckInStatus,
   grantDailyCheckInCredits,
@@ -25,22 +24,18 @@ export async function GET() {
     const { error, user } = await getAuthenticatedUser();
 
     if (error || !user) {
-      return NextResponse.json({ error }, { status: 401 });
+      return apiError({
+        code: "UNAUTHORIZED",
+        message: error || "Unauthorized.",
+        status: 401,
+      });
     }
 
     const status = await getDailyCheckInStatus(user.id);
 
-    return NextResponse.json(status);
+    return apiOk(status);
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to load check-in status.",
-      },
-      { status: 500 },
-    );
+    return handleApiError(error, "Failed to load check-in status.");
   }
 }
 
@@ -49,21 +44,17 @@ export async function POST() {
     const { error, user } = await getAuthenticatedUser();
 
     if (error || !user) {
-      return NextResponse.json({ error }, { status: 401 });
+      return apiError({
+        code: "UNAUTHORIZED",
+        message: error || "Unauthorized.",
+        status: 401,
+      });
     }
 
     const result = await grantDailyCheckInCredits(user.id);
 
-    return NextResponse.json(result);
+    return apiOk(result);
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to complete daily check-in.",
-      },
-      { status: 500 },
-    );
+    return handleApiError(error, "Failed to complete daily check-in.");
   }
 }

@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-
+import { apiError, apiOk, handleApiError } from "@/lib/api-response";
 import {
   listImageGenerationJobs,
   queueImageGenerationJob,
@@ -37,7 +36,7 @@ export async function GET(request: Request) {
     const { error, supabase } = await getAuthenticatedUser();
 
     if (error) {
-      return NextResponse.json({ error }, { status: 401 });
+      return apiError({ code: "UNAUTHORIZED", message: error, status: 401 });
     }
 
     const url = new URL(request.url);
@@ -46,15 +45,9 @@ export async function GET(request: Request) {
       normalizeIds(url.searchParams.get("ids")),
     );
 
-    return NextResponse.json({ jobs });
+    return apiOk({ jobs });
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error ? error.message : "Failed to list image jobs.",
-      },
-      { status: 500 },
-    );
+    return handleApiError(error, "Failed to list image jobs.");
   }
 }
 
@@ -63,7 +56,11 @@ export async function POST(request: Request) {
     const { error, supabase, user } = await getAuthenticatedUser();
 
     if (error || !user) {
-      return NextResponse.json({ error }, { status: 401 });
+      return apiError({
+        code: "UNAUTHORIZED",
+        message: error || "Unauthorized.",
+        status: 401,
+      });
     }
 
     const body = (await request.json()) as Record<string, unknown>;
@@ -76,13 +73,12 @@ export async function POST(request: Request) {
       typeof body.module_id === "string" ? body.module_id : null;
 
     if (!isGeneratedImageType(imageType)) {
-      return NextResponse.json(
-        {
-          error:
-            "image_type must be main_image, lifestyle, infographic, or detail_page_module.",
-        },
-        { status: 400 },
-      );
+      return apiError({
+        code: "BAD_REQUEST",
+        message:
+          "image_type must be main_image, lifestyle, infographic, or detail_page_module.",
+        status: 400,
+      });
     }
 
     const job = await queueImageGenerationJob({
@@ -96,18 +92,16 @@ export async function POST(request: Request) {
     });
     const creditBalance = await getUserCreditBalance(supabase, user.id);
 
-    return NextResponse.json({ credit_balance: creditBalance, job });
+    return apiOk({ credit_balance: creditBalance, job });
   } catch (error) {
     if (error instanceof InsufficientCreditsError) {
-      return NextResponse.json({ error: error.message }, { status: 402 });
+      return apiError({
+        code: "PAYMENT_REQUIRED",
+        error,
+        status: 402,
+      });
     }
 
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error ? error.message : "Failed to queue image job.",
-      },
-      { status: 500 },
-    );
+    return handleApiError(error, "Failed to queue image job.");
   }
 }

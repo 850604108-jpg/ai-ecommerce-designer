@@ -1,5 +1,6 @@
-import { NextResponse, type NextRequest } from "next/server";
+import type { NextRequest } from "next/server";
 
+import { apiError, apiOk } from "@/lib/api-response";
 import { validateDeploymentEnvironment } from "@/lib/env";
 import { supabaseServiceRole } from "@/lib/supabaseClient";
 
@@ -27,7 +28,7 @@ export async function GET(request: NextRequest) {
     const authorization = request.headers.get("authorization");
 
     if (authorization !== `Bearer ${token}`) {
-      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+      return apiError({ code: "UNAUTHORIZED", status: 401 });
     }
   }
 
@@ -47,12 +48,12 @@ export async function GET(request: NextRequest) {
   const checks = [...envResult.checks, { key: "DATABASE_CONNECTION", ...databaseCheck }];
   const ok = checks.every((check) => check.ok);
 
-  return NextResponse.json(
+  return apiOk(
     {
       checkedAt: new Date().toISOString(),
       checks,
       ok,
     },
-    { status: ok ? 200 : 503 },
+    ok ? 200 : 503,
   );
 }

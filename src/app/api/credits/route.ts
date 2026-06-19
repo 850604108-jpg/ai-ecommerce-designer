@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-
+import { apiError, apiOk, handleApiError } from "@/lib/api-response";
 import { getUserCreditBalance } from "@/lib/credits";
 import { supabaseServer } from "@/lib/supabaseClient";
 
@@ -12,21 +11,13 @@ export async function GET() {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+      return apiError({ code: "UNAUTHORIZED", status: 401 });
     }
 
     const creditBalance = await getUserCreditBalance(supabase, user.id);
 
-    return NextResponse.json({ credit_balance: creditBalance });
+    return apiOk({ credit_balance: creditBalance });
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to load credit balance.",
-      },
-      { status: 500 },
-    );
+    return handleApiError(error, "Failed to load credit balance.");
   }
 }

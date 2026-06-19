@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-
+import { apiOk } from "@/lib/api-response";
 import {
   isSupabasePublicConfigComplete,
   isSupabaseServiceRoleConfigured,
@@ -103,11 +102,11 @@ export async function GET() {
     status.database.ok &&
     status.buckets.every((bucket) => bucket.exists && !bucket.error);
 
-  return NextResponse.json(
+  return apiOk(
     {
       connected,
       status,
     },
-    { status: connected ? 200 : 503 },
+    connected ? 200 : 503,
   );
 }
