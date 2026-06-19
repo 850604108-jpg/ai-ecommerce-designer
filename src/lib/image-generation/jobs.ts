@@ -65,6 +65,8 @@ async function getOrCreateGenerationProject(
     .select("id")
     .eq("user_id", userId)
     .eq("settings->>system_key", "ai-image-generation")
+    .order("created_at", { ascending: true })
+    .limit(1)
     .maybeSingle();
 
   if (selectError) {
