@@ -21,11 +21,6 @@ import Image from "next/image";
 import { useLanguage } from "@/components/i18n/language-provider";
 import { Button } from "@/components/ui/button";
 import {
-  getSupabasePublicConfig,
-  getSupabaseStorageBucket,
-  supabaseBrowser,
-} from "@/lib/supabaseClient";
-import {
   ecommercePlatforms,
   type EcommercePlatform,
   type PromptEngineOutput,
@@ -117,44 +112,16 @@ function isAllowedImage(file: File) {
   );
 }
 
-function encodePath(path: string) {
-  return path
-    .split("/")
-    .map((segment) => encodeURIComponent(segment))
-    .join("/");
-}
-
-function createObjectPath(file: File) {
-  const extension = file.name.split(".").pop()?.toLowerCase() || "jpg";
-  const safeBaseName =
-    file.name
-      .replace(/\.[^/.]+$/, "")
-      .toLowerCase()
-      .replace(/[^a-z0-9-]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 48) || "image";
-
-  return `uploads/${Date.now()}-${crypto.randomUUID()}-${safeBaseName}.${extension}`;
-}
-
 function uploadToSupabaseStorage(
   file: File,
   onProgress: (progress: number) => void,
 ) {
   return new Promise<UploadResult>(async (resolve, reject) => {
     try {
-      const supabase = supabaseBrowser();
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const { supabaseAnonKey, supabaseUrl } = getSupabasePublicConfig();
-      const bucket = getSupabaseStorageBucket();
-      const objectPath = createObjectPath(file);
-      const uploadUrl = `${supabaseUrl}/storage/v1/object/${bucket}/${encodePath(
-        objectPath,
-      )}`;
-
       const request = new XMLHttpRequest();
+      const formData = new FormData();
+
+      formData.append("image", file);
 
       request.upload.onprogress = (event) => {
         if (!event.lengthComputable) {
@@ -175,6 +142,7 @@ function uploadToSupabaseStorage(
           try {
             const response = JSON.parse(request.responseText) as {
               error?: string;
+              imageUrl?: string;
               message?: string;
             };
             message = response.message || response.error || message;
@@ -186,23 +154,30 @@ function uploadToSupabaseStorage(
           return;
         }
 
-        const imageUrl = `${supabaseUrl}/storage/v1/object/public/${bucket}/${encodePath(
-          objectPath,
-        )}`;
+        let imageUrl = "";
+
+        try {
+          const response = JSON.parse(request.responseText) as {
+            data?: { imageUrl?: string };
+            imageUrl?: string;
+          };
+          imageUrl = response.data?.imageUrl || response.imageUrl || "";
+        } catch {
+          reject(new Error("Upload returned an invalid response."));
+          return;
+        }
+
+        if (!imageUrl) {
+          reject(new Error("Upload returned an invalid image URL."));
+          return;
+        }
 
         onProgress(100);
         resolve({ imageUrl });
       };
 
-      request.open("POST", uploadUrl);
-      request.setRequestHeader("apikey", supabaseAnonKey);
-      request.setRequestHeader(
-        "Authorization",
-        `Bearer ${session?.access_token || supabaseAnonKey}`,
-      );
-      request.setRequestHeader("Content-Type", file.type);
-      request.setRequestHeader("x-upsert", "false");
-      request.send(file);
+      request.open("POST", "/api/product-image-upload");
+      request.send(formData);
     } catch (error) {
       reject(error);
     }
