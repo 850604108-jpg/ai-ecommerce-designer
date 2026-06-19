@@ -1,18 +1,20 @@
 import Link from "next/link";
 
 import { signOut } from "@/app/auth/actions";
+import { LanguageToggle } from "@/components/i18n/language-toggle";
 import { Button } from "@/components/ui/button";
 import { getUserCreditBalance } from "@/lib/credits";
+import { getDictionary, type Language } from "@/lib/i18n";
 import { supabaseServer, isSupabaseConfigured } from "@/lib/supabaseClient";
 
-const navigation = [
-  { href: "/", label: "Home" },
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/generate", label: "Generate" },
-  { href: "/templates", label: "Templates" },
-];
-
-export async function SiteHeader() {
+export async function SiteHeader({ language }: { language: Language }) {
+  const dictionary = getDictionary(language);
+  const navigation = [
+    { href: "/", label: dictionary.header.navigation.home },
+    { href: "/dashboard", label: dictionary.header.navigation.dashboard },
+    { href: "/generate", label: dictionary.header.navigation.generate },
+    { href: "/templates", label: dictionary.header.navigation.templates },
+  ];
   const supabase = isSupabaseConfigured() ? await supabaseServer() : null;
   const user = supabase ? (await supabase.auth.getUser()).data.user : null;
   const profile =
@@ -44,32 +46,34 @@ export async function SiteHeader() {
           {user ? (
             <>
               <span className="hidden rounded-md border px-2 py-1 text-xs font-medium text-muted-foreground sm:inline-flex">
-                Credits: {creditBalance === null ? "--" : creditBalance}
+                {dictionary.header.credits}:{" "}
+                {creditBalance === null ? "--" : creditBalance}
               </span>
               <Button asChild size="sm" variant="ghost">
-                <Link href="/account">Account</Link>
+                <Link href="/account">{dictionary.header.account}</Link>
               </Button>
               {isAdmin ? (
                 <Button asChild size="sm" variant="ghost">
-                  <Link href="/admin">Admin</Link>
+                  <Link href="/admin">{dictionary.account.admin}</Link>
                 </Button>
               ) : null}
               <form action={signOut}>
                 <Button size="sm" type="submit" variant="ghost">
-                  Sign out
+                  {dictionary.account.signOut}
                 </Button>
               </form>
             </>
           ) : (
             <>
               <Button asChild size="sm" variant="ghost">
-                <Link href="/login">Login</Link>
+                <Link href="/login">{dictionary.account.login}</Link>
               </Button>
               <Button asChild size="sm">
-                <Link href="/register">Register</Link>
+                <Link href="/register">{dictionary.account.register}</Link>
               </Button>
             </>
           )}
+          <LanguageToggle />
         </nav>
       </div>
     </header>

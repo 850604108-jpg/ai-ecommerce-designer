@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
+import { useLanguage } from "@/components/i18n/language-provider";
 import { Button } from "@/components/ui/button";
 import {
   loadFavoriteTemplateIds,
@@ -29,16 +30,8 @@ import { cn } from "@/lib/utils";
 
 type CategoryFilter = TemplateCategory | "all" | "favorites";
 
-const categoryOptions: { label: string; value: CategoryFilter }[] = [
-  { label: "全部", value: "all" },
-  ...templateCategories.map((category) => ({
-    label: categoryLabels[category],
-    value: category,
-  })),
-  { label: "收藏", value: "favorites" },
-];
-
 export function TemplateMarketplace() {
+  const { dictionary } = useLanguage();
   const router = useRouter();
   const [templates, setTemplates] = useState<MarketplaceTemplate[]>([]);
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
@@ -87,6 +80,18 @@ export function TemplateMarketplace() {
       .sort((a, b) => Number(b.isFeatured) - Number(a.isFeatured));
   }, [activeCategory, favoriteIds, query, templates]);
 
+  const categoryOptions = useMemo<{ label: string; value: CategoryFilter }[]>(
+    () => [
+      { label: dictionary.templates.all, value: "all" },
+      ...templateCategories.map((category) => ({
+        label: categoryLabels[category],
+        value: category,
+      })),
+      { label: dictionary.templates.favorites, value: "favorites" },
+    ],
+    [dictionary],
+  );
+
   function toggleFavorite(templateId: string) {
     setFavoriteIds((currentIds) => {
       const nextIds = currentIds.includes(templateId)
@@ -114,12 +119,12 @@ export function TemplateMarketplace() {
           <input
             className="h-10 w-full rounded-md border bg-background pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-ring"
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜索模板、标签或分类"
+            placeholder={dictionary.templates.searchPlaceholder}
             value={query}
           />
         </div>
         <Button asChild variant="outline">
-          <a href="/admin/templates">后台管理模板</a>
+          <a href="/admin/templates">{dictionary.templates.admin}</a>
         </Button>
       </div>
 
@@ -166,7 +171,7 @@ export function TemplateMarketplace() {
                     </p>
                     {template.isFeatured ? (
                       <Star
-                        aria-label="精选模板"
+                        aria-label={dictionary.templates.featured}
                         className="mt-1 size-4 shrink-0 fill-current"
                       />
                     ) : null}
@@ -191,7 +196,7 @@ export function TemplateMarketplace() {
                       variant="outline"
                     >
                       <Eye aria-hidden="true" />
-                      预览
+                      {dictionary.templates.preview}
                     </Button>
                     <Button
                       aria-pressed={isFavorite}
@@ -204,14 +209,14 @@ export function TemplateMarketplace() {
                         aria-hidden="true"
                         className={isFavorite ? "fill-current" : ""}
                       />
-                      收藏
+                      {dictionary.templates.favorite}
                     </Button>
                     <Button
                       onClick={() => handleUseTemplate(template)}
                       size="sm"
                       type="button"
                     >
-                      使用模板
+                      {dictionary.templates.use}
                       <ArrowRight aria-hidden="true" />
                     </Button>
                   </div>
@@ -226,9 +231,11 @@ export function TemplateMarketplace() {
             aria-hidden="true"
             className="mx-auto size-8 text-muted-foreground"
           />
-          <h2 className="mt-4 text-lg font-semibold">没有找到模板</h2>
+          <h2 className="mt-4 text-lg font-semibold">
+            {dictionary.templates.emptyTitle}
+          </h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            换个分类或关键词试试，也可以去后台新增模板。
+            {dictionary.templates.emptyDescription}
           </p>
         </div>
       )}
@@ -250,7 +257,7 @@ export function TemplateMarketplace() {
                 </h2>
               </div>
               <Button
-                aria-label="关闭预览"
+                aria-label={dictionary.templates.closePreview}
                 onClick={() => setPreviewTemplate(null)}
                 size="icon"
                 type="button"
@@ -269,7 +276,9 @@ export function TemplateMarketplace() {
                   {previewTemplate.description}
                 </p>
                 <div className="rounded-md bg-secondary p-3">
-                  <h3 className="text-sm font-medium">模板提示词</h3>
+                  <h3 className="text-sm font-medium">
+                    {dictionary.templates.prompt}
+                  </h3>
                   <p className="mt-2 text-xs leading-5 text-muted-foreground">
                     {previewTemplate.prompt}
                   </p>
@@ -288,13 +297,13 @@ export function TemplateMarketplace() {
                           : ""
                       }
                     />
-                    收藏
+                    {dictionary.templates.favorite}
                   </Button>
                   <Button
                     onClick={() => handleUseTemplate(previewTemplate)}
                     type="button"
                   >
-                    使用模板
+                    {dictionary.templates.use}
                     <ArrowRight aria-hidden="true" />
                   </Button>
                 </div>

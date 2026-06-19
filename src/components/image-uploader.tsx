@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 
+import { useLanguage } from "@/components/i18n/language-provider";
 import { Button } from "@/components/ui/button";
 import {
   getSupabasePublicConfig,
@@ -31,7 +32,6 @@ import {
 } from "@/lib/prompt-engine";
 import {
   imageGenerationCreditCosts,
-  generatedImageTypeLabels,
   type GeneratedImageJob,
   type GeneratedImageType,
 } from "@/lib/image-generation/types";
@@ -497,6 +497,7 @@ function downloadBlob(blob: Blob, fileName: string) {
 }
 
 export function ImageUploader() {
+  const { dictionary } = useLanguage();
   const inputId = useId();
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
@@ -567,7 +568,7 @@ export function ImageUploader() {
     if (!isAllowedImage(nextFile)) {
       setFile(null);
       setStatus("error");
-      setError("Only jpg, jpeg, png, and webp images are supported.");
+      setError(dictionary.imageUploader.invalidImage);
       return;
     }
 
@@ -603,7 +604,7 @@ export function ImageUploader() {
       setError(
         uploadError instanceof Error
           ? uploadError.message
-          : "Upload failed. Please try again.",
+          : dictionary.imageUploader.uploadFailed,
       );
       return;
     }
@@ -627,7 +628,7 @@ export function ImageUploader() {
       setError(
         recognitionError instanceof Error
           ? recognitionError.message
-          : "Product recognition failed. Please try again.",
+          : dictionary.imageUploader.recognitionFailed,
       );
     }
   }
@@ -649,7 +650,7 @@ export function ImageUploader() {
       setPromptError(
         promptGenerationError instanceof Error
           ? promptGenerationError.message
-          : "Prompt generation failed.",
+          : dictionary.imageUploader.promptGenerationFailed,
       );
     }
   }
@@ -736,7 +737,7 @@ export function ImageUploader() {
       setImageQueueError(
         generationError instanceof Error
           ? generationError.message
-          : "Image generation failed.",
+          : dictionary.imageUploader.imageGenerationFailed,
       );
 
       try {
@@ -808,7 +809,7 @@ export function ImageUploader() {
       setImageQueueError(
         generationError instanceof Error
           ? generationError.message
-          : "Detail page generation failed.",
+          : dictionary.imageUploader.detailPageExportFailed,
       );
 
       try {
@@ -844,7 +845,7 @@ export function ImageUploader() {
         canvas.toBlob((blob) => {
           if (!blob) {
             setDetailPageExportStatus("error");
-            setDetailPageExportError("PNG export failed.");
+            setDetailPageExportError(dictionary.imageUploader.exportPngFailed);
             return;
           }
 
@@ -877,7 +878,7 @@ export function ImageUploader() {
       setDetailPageExportError(
         exportError instanceof Error
           ? exportError.message
-          : "Detail page export failed.",
+          : dictionary.imageUploader.detailPageExportFailed,
       );
     }
   }
@@ -885,11 +886,11 @@ export function ImageUploader() {
   function getGeneratedImageLabel(job: GeneratedImageJob) {
     const imageType = job.metadata?.image_type;
 
-    return typeof imageType === "string" && imageType in generatedImageTypeLabels
-      ? `${generatedImageTypeLabels[imageType as GeneratedImageType]} ${
+    return typeof imageType === "string" && imageType in dictionary.common.imageTypes
+      ? `${dictionary.common.imageTypes[imageType as GeneratedImageType]} ${
           getDetailModuleId(job) || ""
         }`.trim()
-      : "生成图";
+      : dictionary.imageUploader.generatedImageFallback;
   }
 
   const normalizedPrompts = prompts
@@ -933,7 +934,7 @@ export function ImageUploader() {
       >
         {previewUrl ? (
           <Image
-            alt="Selected upload preview"
+            alt={dictionary.imageUploader.selectedPreviewAlt}
             className="max-h-[280px] w-full rounded-md object-contain"
             height={280}
             src={previewUrl}
@@ -946,9 +947,11 @@ export function ImageUploader() {
               <ImagePlus aria-hidden="true" className="size-6" />
             </div>
             <div>
-              <h2 className="text-lg font-medium">Upload image</h2>
+              <h2 className="text-lg font-medium">
+                {dictionary.imageUploader.upload}
+              </h2>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                Drag an image here or choose a local file.
+                {dictionary.imageUploader.uploadDescription}
               </p>
             </div>
           </div>
@@ -963,7 +966,7 @@ export function ImageUploader() {
         />
         <div className="mt-6 flex flex-wrap justify-center gap-3">
           <Button asChild variant="outline">
-            <label htmlFor={inputId}>Choose file</label>
+            <label htmlFor={inputId}>{dictionary.imageUploader.chooseFile}</label>
           </Button>
           <Button
             disabled={!file || status === "uploading"}
@@ -978,10 +981,10 @@ export function ImageUploader() {
               <Upload aria-hidden="true" />
             )}
             {status === "uploading"
-              ? "Uploading"
+              ? dictionary.imageUploader.uploading
               : recognitionStatus === "recognizing"
-                ? "Recognizing"
-                : "Upload & recognize"}
+                ? dictionary.imageUploader.recognizing
+                : dictionary.imageUploader.uploadAndRecognize}
           </Button>
         </div>
       </div>
@@ -989,7 +992,9 @@ export function ImageUploader() {
       <div className="rounded-lg border bg-card p-5">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-base font-medium">Upload status</h2>
+            <h2 className="text-base font-medium">
+              {dictionary.imageUploader.uploadStatus}
+            </h2>
             <p className="mt-1 text-sm text-muted-foreground">
               jpg, jpeg, png, webp
             </p>
@@ -1004,11 +1009,15 @@ export function ImageUploader() {
         {file ? (
           <div className="mt-5 space-y-2 text-sm">
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">File</span>
+              <span className="text-muted-foreground">
+                {dictionary.imageUploader.file}
+              </span>
               <span className="truncate text-right font-medium">{file.name}</span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-muted-foreground">Size</span>
+              <span className="text-muted-foreground">
+                {dictionary.imageUploader.size}
+              </span>
               <span className="font-medium">
                 {(file.size / 1024 / 1024).toFixed(2)} MB
               </span>
@@ -1018,7 +1027,9 @@ export function ImageUploader() {
 
         <div className="mt-5">
           <div className="mb-2 flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Progress</span>
+            <span className="text-muted-foreground">
+              {dictionary.imageUploader.progress}
+            </span>
             <span className="font-medium">{progress}%</span>
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-secondary">
@@ -1032,7 +1043,7 @@ export function ImageUploader() {
         {recognitionStatus === "recognizing" ? (
           <div className="mt-4 flex items-center gap-2 rounded-md border bg-secondary p-3 text-sm">
             <Loader2 aria-hidden="true" className="size-4 animate-spin" />
-            Recognizing product details...
+            {dictionary.imageUploader.recognizingDetails}
           </div>
         ) : null}
 
@@ -1048,26 +1059,36 @@ export function ImageUploader() {
               <>
                 <div className="space-y-3 rounded-md bg-secondary p-3 text-sm">
                   <div className="flex justify-between gap-4">
-                    <span className="text-muted-foreground">Product</span>
+                    <span className="text-muted-foreground">
+                      {dictionary.imageUploader.product}
+                    </span>
                     <span className="text-right font-medium">
-                      {result.recognition.product_name || "Unknown"}
+                      {result.recognition.product_name ||
+                        dictionary.common.unknown}
                     </span>
                   </div>
                   <div className="flex justify-between gap-4">
-                    <span className="text-muted-foreground">Category</span>
+                    <span className="text-muted-foreground">
+                      {dictionary.imageUploader.category}
+                    </span>
                     <span className="text-right font-medium">
-                      {result.recognition.category || "Unknown"}
+                      {result.recognition.category || dictionary.common.unknown}
                     </span>
                   </div>
                   <div className="flex justify-between gap-4">
-                    <span className="text-muted-foreground">Target user</span>
+                    <span className="text-muted-foreground">
+                      {dictionary.imageUploader.targetUser}
+                    </span>
                     <span className="text-right font-medium">
-                      {result.recognition.target_user || "Unknown"}
+                      {result.recognition.target_user ||
+                        dictionary.common.unknown}
                     </span>
                   </div>
                   {result.recognition.highlights.length ? (
                     <div>
-                      <span className="text-muted-foreground">Highlights</span>
+                      <span className="text-muted-foreground">
+                        {dictionary.imageUploader.highlights}
+                      </span>
                       <ul className="mt-2 list-disc space-y-1 pl-5">
                         {result.recognition.highlights.map((highlight) => (
                           <li key={highlight}>{highlight}</li>
@@ -1080,9 +1101,11 @@ export function ImageUploader() {
                 <div className="rounded-md border p-3">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <h3 className="text-sm font-medium">Prompt Engine</h3>
+                      <h3 className="text-sm font-medium">
+                        {dictionary.imageUploader.promptEngine}
+                      </h3>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        Generate platform-ready image prompts.
+                        {dictionary.imageUploader.promptEngineDescription}
                       </p>
                     </div>
                     <select
@@ -1108,7 +1131,7 @@ export function ImageUploader() {
                         aria-hidden="true"
                         className="size-4 animate-spin"
                       />
-                      Generating prompts...
+                      {dictionary.imageUploader.generatingPrompts}
                     </div>
                   ) : null}
 
@@ -1124,7 +1147,7 @@ export function ImageUploader() {
                         <div className="flex items-center gap-2">
                           <Coins aria-hidden="true" className="size-4" />
                           <span className="text-muted-foreground">
-                            剩余积分
+                            {dictionary.imageUploader.remainingCredits}
                           </span>
                         </div>
                         <span className="font-semibold">
@@ -1136,10 +1159,13 @@ export function ImageUploader() {
                         <div className="flex flex-wrap items-center justify-between gap-3">
                           <div>
                             <h4 className="text-sm font-medium">
-                              AI 图片生成
+                              {dictionary.imageUploader.aiImageGeneration}
                             </h4>
                             <p className="mt-1 text-xs text-muted-foreground">
-                              主图 1 Credit，场景图 2 Credits，信息图按场景图计费 2 Credits。
+                              {
+                                dictionary.imageUploader
+                                  .aiImageGenerationDescription
+                              }
                             </p>
                           </div>
                           <Button
@@ -1161,20 +1187,24 @@ export function ImageUploader() {
                             ) : (
                               <WandSparkles aria-hidden="true" />
                             )}
-                            生成三张核心图 · {coreImageCreditCost} Credits
+                            {dictionary.imageUploader.generateCoreImages(
+                              coreImageCreditCost,
+                            )}
                           </Button>
                         </div>
 
                         {imageQueueStatus === "queueing" ? (
                           <div className="mt-4 flex items-center gap-2 rounded-md bg-secondary p-3 text-sm">
                             <Clock3 aria-hidden="true" className="size-4" />
-                            任务正在进入队列...
+                            {dictionary.imageUploader.queueing}
                           </div>
                         ) : null}
 
                         {!canAffordCoreImages ? (
                           <p className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-                            剩余积分不足，生成三张核心图需要 {coreImageCreditCost} Credits。
+                            {dictionary.imageUploader.coreImageInsufficientCredits(
+                              coreImageCreditCost,
+                            )}
                           </p>
                         ) : null}
 
@@ -1184,7 +1214,7 @@ export function ImageUploader() {
                               aria-hidden="true"
                               className="size-4 animate-spin"
                             />
-                            生成中...
+                            {dictionary.imageUploader.generating}
                           </div>
                         ) : null}
 
@@ -1194,7 +1224,7 @@ export function ImageUploader() {
                               aria-hidden="true"
                               className="size-4"
                             />
-                            已完成并保存到 generated_images 表。
+                            {dictionary.imageUploader.generatedImageSaved}
                           </div>
                         ) : null}
 
@@ -1215,7 +1245,7 @@ export function ImageUploader() {
                                 variant="outline"
                               >
                                 <RefreshCw aria-hidden="true" />
-                                刷新状态
+                                {dictionary.imageUploader.refreshStatus}
                               </Button>
                             ) : null}
                           </div>
@@ -1235,17 +1265,22 @@ export function ImageUploader() {
                                     </h5>
                                     <p className="mt-1 text-xs text-muted-foreground">
                                       {job.status === "queued"
-                                        ? "排队中"
+                                        ? dictionary.imageUploader.status.queued
                                         : job.status === "processing"
-                                          ? "生成中..."
+                                          ? dictionary.imageUploader.status
+                                              .processing
                                           : job.status === "completed"
-                                            ? "完成"
+                                            ? dictionary.imageUploader.status
+                                                .completed
                                             : job.status === "failed"
-                                              ? "失败"
+                                              ? dictionary.imageUploader.status
+                                                  .failed
                                             : job.status}
                                     </p>
                                     <p className="mt-1 text-xs text-muted-foreground">
-                                      消耗 {job.credits_spent} Credits
+                                      {dictionary.imageUploader.spentCredits(
+                                        job.credits_spent,
+                                      )}
                                     </p>
                                   </div>
                                   {job.status === "processing" ||
@@ -1269,11 +1304,12 @@ export function ImageUploader() {
 
                                 {job.public_url && job.status === "completed" ? (
                                   <Image
-                                    alt={`${getGeneratedImageLabel(job)} result`}
+                                    alt={dictionary.imageUploader.generatedImageAlt(
+                                      getGeneratedImageLabel(job),
+                                    )}
                                     className="max-h-80 w-full rounded-md object-contain"
                                     height={320}
                                     src={job.public_url}
-                                    unoptimized
                                     width={512}
                                   />
                                 ) : null}
@@ -1293,10 +1329,10 @@ export function ImageUploader() {
                         <div className="flex flex-wrap items-center justify-between gap-3">
                           <div>
                             <h4 className="text-sm font-medium">
-                              详情页生成
+                              {dictionary.imageUploader.detailPage}
                             </h4>
                             <p className="mt-1 text-xs text-muted-foreground">
-                              详情页每个模块 3 Credits，失败自动退款。
+                              {dictionary.imageUploader.detailPageDescription}
                             </p>
                           </div>
                           <div className="flex flex-wrap gap-2">
@@ -1319,7 +1355,9 @@ export function ImageUploader() {
                               ) : (
                                 <WandSparkles aria-hidden="true" />
                               )}
-                              生成详情页 · {detailPageCreditCost} Credits
+                              {dictionary.imageUploader.generateDetailPage(
+                                detailPageCreditCost,
+                              )}
                             </Button>
                             <Button
                               disabled={
@@ -1353,7 +1391,9 @@ export function ImageUploader() {
                         <div className="mt-4 grid gap-3">
                           {!canAffordDetailPage ? (
                             <p className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-                              剩余积分不足，生成详情页需要 {detailPageCreditCost} Credits。
+                              {dictionary.imageUploader.detailPageInsufficientCredits(
+                                detailPageCreditCost,
+                              )}
                             </p>
                           ) : null}
 
@@ -1378,7 +1418,9 @@ export function ImageUploader() {
                                     </p>
                                     {job ? (
                                       <p className="mt-1 text-xs text-muted-foreground">
-                                        消耗 {job.credits_spent} Credits
+                                        {dictionary.imageUploader.spentCredits(
+                                          job.credits_spent,
+                                        )}
                                       </p>
                                     ) : null}
                                   </div>
@@ -1404,11 +1446,12 @@ export function ImageUploader() {
                                 {job?.public_url &&
                                 job.status === "completed" ? (
                                   <Image
-                                    alt={`${module.id} detail page module`}
+                                    alt={dictionary.imageUploader.detailPageModuleAlt(
+                                      module.id,
+                                    )}
                                     className="mt-3 max-h-80 w-full rounded-md object-contain"
                                     height={320}
                                     src={job.public_url}
-                                    unoptimized
                                     width={512}
                                   />
                                 ) : null}
@@ -1429,7 +1472,7 @@ export function ImageUploader() {
                               aria-hidden="true"
                               className="size-4 animate-spin"
                             />
-                            正在拼接并导出...
+                            {dictionary.imageUploader.exportingDetailPage}
                           </div>
                         ) : null}
 
@@ -1455,7 +1498,7 @@ export function ImageUploader() {
                               variant="outline"
                             >
                               <Copy aria-hidden="true" />
-                              Copy
+                              {dictionary.common.copy}
                             </Button>
                           </div>
                           <p className="max-h-44 overflow-auto whitespace-pre-wrap text-xs leading-5 text-muted-foreground">

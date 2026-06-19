@@ -1,14 +1,27 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 
 import { HistoryDashboard } from "@/components/dashboard/history-dashboard";
 import { Button } from "@/components/ui/button";
 import { getUserCreditBalance } from "@/lib/credits";
+import { getDictionary } from "@/lib/i18n";
+import { getCurrentLanguage } from "@/lib/i18n-server";
 import { listImageGenerationHistory } from "@/lib/image-generation/jobs";
 import { listDashboardProjects } from "@/lib/projects";
 import { supabaseServer, isSupabaseConfigured } from "@/lib/supabaseClient";
 
 type DashboardPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+export const metadata: Metadata = {
+  description:
+    "Review generated ecommerce images, projects, credits, prompts, and regeneration history.",
+  robots: {
+    follow: false,
+    index: false,
+  },
+  title: "Dashboard",
 };
 
 function getParam(
@@ -24,6 +37,8 @@ export default async function DashboardPage({
   searchParams,
 }: DashboardPageProps) {
   const params = (await searchParams) || {};
+  const language = await getCurrentLanguage();
+  const dictionary = getDictionary(language);
   const search = getParam(params, "q").trim();
   const imagePage = Math.max(
     Number.parseInt(getParam(params, "imagePage"), 10) || 1,
@@ -67,7 +82,7 @@ export default async function DashboardPage({
       dashboardData = { creditBalance, history, projects };
     } catch (error) {
       dashboardError =
-        error instanceof Error ? error.message : "Dashboard 加载失败。";
+        error instanceof Error ? error.message : dictionary.dashboard.loadFailedMessage;
     }
   }
 
@@ -78,10 +93,10 @@ export default async function DashboardPage({
           History
         </p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight">
-          Dashboard
+          {dictionary.dashboard.title}
         </h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-          查看所有项目和生成记录，支持分页、重新生成、删除项目和错误处理。
+          {dictionary.dashboard.description}
         </p>
       </div>
 
@@ -97,21 +112,26 @@ export default async function DashboardPage({
           projectPageCount={dashboardData.projects.pageCount}
           projectTotalCount={dashboardData.projects.totalCount}
           projects={dashboardData.projects.projects}
+          language={language}
           search={search}
         />
       ) : dashboardError ? (
         <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-6">
-          <h2 className="text-base font-medium text-destructive">加载失败</h2>
+          <h2 className="text-base font-medium text-destructive">
+            {dictionary.dashboard.loadFailed}
+          </h2>
           <p className="mt-2 text-sm text-destructive">{dashboardError}</p>
         </div>
       ) : (
         <div className="rounded-lg border bg-card p-6">
-          <h2 className="text-base font-medium">需要登录</h2>
+          <h2 className="text-base font-medium">
+            {dictionary.dashboard.loginRequired}
+          </h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            登录后即可查看你的所有项目历史记录。
+            {dictionary.dashboard.loginRequiredDescription}
           </p>
           <Button asChild className="mt-4">
-            <Link href="/login">登录</Link>
+            <Link href="/login">{dictionary.dashboard.login}</Link>
           </Button>
         </div>
       )}

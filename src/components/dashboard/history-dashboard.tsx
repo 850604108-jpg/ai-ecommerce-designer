@@ -16,9 +16,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
+import { useLanguage } from "@/components/i18n/language-provider";
 import { Button } from "@/components/ui/button";
+import { type Language } from "@/lib/i18n";
 import {
-  generatedImageTypeLabels,
   type GeneratedImageHistoryJob,
   type GeneratedImageType,
 } from "@/lib/image-generation/types";
@@ -36,44 +37,44 @@ type HistoryDashboardProps = {
   projectPageCount: number;
   projectTotalCount: number;
   projects: DashboardProject[];
+  language: Language;
   search: string;
 };
 
 type BusyJobAction = "regenerate" | null;
 
-const statusLabels: Record<string, string> = {
-  active: "进行中",
-  archived: "已删除",
-  completed: "已完成",
-  draft: "草稿",
-  failed: "失败",
-  processing: "生成中",
-  queued: "排队中",
-};
-
-function getImageLabel(job: GeneratedImageHistoryJob) {
+function getImageLabel(
+  job: GeneratedImageHistoryJob,
+  labels: Readonly<Record<GeneratedImageType, string>>,
+) {
   const imageType = job.metadata.image_type;
   const moduleId = job.metadata.module_id;
   const base =
-    typeof imageType === "string" && imageType in generatedImageTypeLabels
-      ? generatedImageTypeLabels[imageType as GeneratedImageType]
-      : "生成图";
+    typeof imageType === "string" && imageType in labels
+      ? labels[imageType as GeneratedImageType]
+      : labels.detail_page_module;
 
   return typeof moduleId === "string" && moduleId ? `${base} ${moduleId}` : base;
 }
 
-function formatDate(value: string | null) {
+function formatDate(value: string | null, language: Language) {
   if (!value) {
     return "-";
   }
 
-  return new Intl.DateTimeFormat("zh-CN", {
+  return new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en-US", {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({
+  labels,
+  status,
+}: {
+  labels: Readonly<Record<string, string>>;
+  status: string;
+}) {
   return (
     <span
       className={cn(
@@ -85,7 +86,7 @@ function StatusBadge({ status }: { status: string }) {
             : "text-muted-foreground",
       )}
     >
-      {statusLabels[status] || status}
+      {labels[status] || status}
     </span>
   );
 }
@@ -101,8 +102,10 @@ export function HistoryDashboard({
   projectPageCount,
   projectTotalCount,
   projects,
+  language,
   search,
 }: HistoryDashboardProps) {
+  const { dictionary: d } = useLanguage();
   const pathname = usePathname();
   const router = useRouter();
   const [query, setQuery] = useState(search);
@@ -170,7 +173,7 @@ export function HistoryDashboard({
   async function copyPrompt(job: GeneratedImageHistoryJob) {
     setError("");
     await navigator.clipboard.writeText(job.prompt);
-    setNotice("Prompt 已复制。");
+    setNotice(d.dashboard.copyNotice);
   }
 
   async function regenerate(job: GeneratedImageHistoryJob) {
@@ -188,7 +191,7 @@ export function HistoryDashboard({
       };
 
       if (!response.ok || !payload.job) {
-        throw new Error(payload.error || "重新生成失败。");
+        throw new Error(payload.error || d.dashboard.regenerateFailed);
       }
 
       const processResponse = await fetch(
@@ -200,14 +203,18 @@ export function HistoryDashboard({
       };
 
       if (!processResponse.ok) {
-        throw new Error(processPayload.error || "生成处理失败。");
+        throw new Error(
+          processPayload.error || d.dashboard.regenerateProcessingFailed,
+        );
       }
 
-      setNotice("已重新生成并保存到生成记录。");
+      setNotice(d.dashboard.regenerateNotice);
       router.refresh();
     } catch (regenerateError) {
       setError(
-        regenerateError instanceof Error ? regenerateError.message : "重新生成失败。",
+        regenerateError instanceof Error
+          ? regenerateError.message
+          : d.dashboard.regenerateFailed,
       );
     } finally {
       setBusyJob(null);
@@ -216,14 +223,7 @@ export function HistoryDashboard({
 
   async function deleteProject(project: DashboardProject) {
     const confirmed = window.confirm(
-      [
-        "确认删除这个项目？",
-        "",
-        `项目：${project.name}`,
-        `生成记录：${project.image_count} 条`,
-        "",
-        "这会将项目归档，并把项目下的生成记录标记为 deleted；不会直接删除文件。",
-      ].join("\n"),
+      d.dashboard.confirmDelete(project.name, project.image_count),
     );
 
     if (!confirmed) {
@@ -241,14 +241,16 @@ export function HistoryDashboard({
       const payload = (await response.json()) as { error?: string };
 
       if (!response.ok) {
-        throw new Error(payload.error || "删除项目失败。");
+        throw new Error(payload.error || d.dashboard.deleteProjectFailed);
       }
 
-      setNotice("项目已删除。");
+      setNotice(d.dashboard.deleteProjectNotice);
       router.refresh();
     } catch (deleteError) {
       setError(
-        deleteError instanceof Error ? deleteError.message : "删除项目失败。",
+        deleteError instanceof Error
+          ? deleteError.message
+          : d.dashboard.deleteProjectFailed,
       );
     } finally {
       setBusyProjectId(null);
@@ -259,29 +261,37 @@ export function HistoryDashboard({
     <div className="space-y-6">
       <div className="grid gap-3 sm:grid-cols-4">
         <div className="rounded-lg border bg-card p-4">
-          <p className="text-sm text-muted-foreground">项目总数</p>
+          <p className="text-sm text-muted-foreground">
+            {d.dashboard.totalProjects}
+          </p>
           <p className="mt-2 text-2xl font-semibold">{projectTotalCount}</p>
         </div>
         <div className="rounded-lg border bg-card p-4">
-          <p className="text-sm text-muted-foreground">生成记录</p>
+          <p className="text-sm text-muted-foreground">
+            {d.dashboard.totalImages}
+          </p>
           <p className="mt-2 text-2xl font-semibold">{imageTotalCount}</p>
         </div>
         <div className="rounded-lg border bg-card p-4">
-          <p className="text-sm text-muted-foreground">剩余积分</p>
+          <p className="text-sm text-muted-foreground">
+            {d.imageUploader.remainingCredits}
+          </p>
           <p className="mt-2 text-2xl font-semibold">
             {creditBalance === null ? "--" : creditBalance}
           </p>
         </div>
         <div className="rounded-lg border bg-card p-4">
-          <p className="text-sm text-muted-foreground">加载状态</p>
+          <p className="text-sm text-muted-foreground">
+            {d.dashboard.loadState}
+          </p>
           <p className="mt-2 flex items-center gap-2 text-sm font-medium">
             {isPending ? (
               <>
                 <Loader2 aria-hidden="true" className="size-4 animate-spin" />
-                加载中
+                {d.common.loading}
               </>
             ) : (
-              "已就绪"
+              d.common.ready
             )}
           </p>
         </div>
@@ -299,7 +309,7 @@ export function HistoryDashboard({
           <input
             className="h-10 w-full rounded-md border bg-background pl-9 pr-3 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring"
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜索项目名称或 prompt"
+            placeholder={d.dashboard.searchPlaceholder}
             type="search"
             value={query}
           />
@@ -310,7 +320,7 @@ export function HistoryDashboard({
           ) : (
             <Search aria-hidden="true" />
           )}
-          搜索
+          {d.common.search}
         </Button>
       </form>
 
@@ -331,14 +341,14 @@ export function HistoryDashboard({
           <div>
             <h2 className="flex items-center gap-2 text-lg font-semibold">
               <FolderKanban aria-hidden="true" className="size-5" />
-              Projects
+              {d.dashboard.projects}
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              查看所有未归档项目，并可删除项目。
+              {d.dashboard.projectsDescription}
             </p>
           </div>
           <span className="text-sm text-muted-foreground">
-            第 {projectPage} 页，共 {projectPageCount} 页
+            {d.dashboard.pageOf(projectPage, projectPageCount)}
           </span>
         </div>
 
@@ -357,7 +367,6 @@ export function HistoryDashboard({
                           className="size-20 rounded-md object-cover"
                           height={80}
                           src={project.latest_image_url}
-                          unoptimized
                           width={80}
                         />
                       ) : (
@@ -374,14 +383,23 @@ export function HistoryDashboard({
                             {project.name}
                           </h3>
                           <p className="mt-1 line-clamp-2 text-sm leading-6 text-muted-foreground">
-                            {project.description || "暂无描述"}
+                            {project.description || d.dashboard.noDescription}
                           </p>
                         </div>
-                        <StatusBadge status={project.status} />
+                        <StatusBadge
+                          labels={d.dashboard.status}
+                          status={project.status}
+                        />
                       </div>
                       <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
-                        <span>{project.image_count} 张图片</span>
-                        <span>更新 {formatDate(project.updated_at)}</span>
+                        <span>
+                          {d.dashboard.projectImageCount(project.image_count)}
+                        </span>
+                        <span>
+                          {d.dashboard.updatedAt(
+                            formatDate(project.updated_at, language),
+                          )}
+                        </span>
                       </div>
                       <div className="mt-4 flex flex-wrap gap-2">
                         <Button
@@ -399,7 +417,7 @@ export function HistoryDashboard({
                           ) : (
                             <Trash2 aria-hidden="true" />
                           )}
-                          删除项目
+                          {d.dashboard.deleteProject}
                         </Button>
                       </div>
                     </div>
@@ -410,9 +428,11 @@ export function HistoryDashboard({
           </div>
         ) : (
           <div className="rounded-lg border bg-card p-8 text-center">
-            <h3 className="text-base font-medium">暂无项目</h3>
+            <h3 className="text-base font-medium">
+              {d.dashboard.emptyProjects}
+            </h3>
             <p className="mt-2 text-sm text-muted-foreground">
-              完整生成流程创建的项目会显示在这里。
+              {d.dashboard.projectsCreatedByFlow}
             </p>
           </div>
         )}
@@ -424,7 +444,7 @@ export function HistoryDashboard({
             type="button"
             variant="outline"
           >
-            上一页
+            {d.common.previousPage}
           </Button>
           <Button
             disabled={projectPage >= projectPageCount || isPending}
@@ -432,7 +452,7 @@ export function HistoryDashboard({
             type="button"
             variant="outline"
           >
-            下一页
+            {d.common.nextPage}
           </Button>
         </div>
       </section>
@@ -442,14 +462,14 @@ export function HistoryDashboard({
           <div>
             <h2 className="flex items-center gap-2 text-lg font-semibold">
               <ImageIcon aria-hidden="true" className="size-5" />
-              Images
+              {d.dashboard.images}
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              查看生成记录，并可复制 prompt 或重新生成。
+              {d.dashboard.imagesDescription}
             </p>
           </div>
           <span className="text-sm text-muted-foreground">
-            第 {imagePage} 页，共 {imagePageCount} 页
+            {d.dashboard.pageOf(imagePage, imagePageCount)}
           </span>
         </div>
 
@@ -465,16 +485,18 @@ export function HistoryDashboard({
                     <div className="flex min-h-40 items-center justify-center rounded-md bg-secondary">
                       {job.public_url && job.status === "completed" ? (
                         <Image
-                          alt={`${getImageLabel(job)} preview`}
+                          alt={`${getImageLabel(
+                            job,
+                            d.common.imageTypes,
+                          )} preview`}
                           className="max-h-40 w-full rounded-md object-contain"
                           height={160}
                           src={job.public_url}
-                          unoptimized
                           width={180}
                         />
                       ) : (
                         <span className="text-sm text-muted-foreground">
-                          {statusLabels[job.status] || job.status}
+                          {d.dashboard.status[job.status] || job.status}
                         </span>
                       )}
                     </div>
@@ -483,13 +505,16 @@ export function HistoryDashboard({
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div className="min-w-0">
                           <p className="text-sm text-muted-foreground">
-                            {job.project?.name || "未命名项目"}
+                            {job.project?.name || d.dashboard.noDescription}
                           </p>
                           <h3 className="mt-1 text-base font-medium">
-                            {getImageLabel(job)}
+                            {getImageLabel(job, d.common.imageTypes)}
                           </h3>
                         </div>
-                        <StatusBadge status={job.status} />
+                        <StatusBadge
+                          labels={d.dashboard.status}
+                          status={job.status}
+                        />
                       </div>
 
                       <p className="max-h-[4.5rem] overflow-hidden text-sm leading-6 text-muted-foreground">
@@ -497,11 +522,11 @@ export function HistoryDashboard({
                       </p>
 
                       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                        <span>{formatDate(job.created_at)}</span>
+                        <span>{formatDate(job.created_at, language)}</span>
                         <span>
                           {job.width && job.height
                             ? `${job.width}x${job.height}`
-                            : "尺寸未定"}
+                            : d.dashboard.dimensionsPending}
                         </span>
                         <span>{job.model}</span>
                         <span>{job.credits_spent} Credits</span>
@@ -518,7 +543,7 @@ export function HistoryDashboard({
                           <Button
                             asChild
                             size="sm"
-                            title="查看生成图"
+                            title={d.dashboard.viewGeneratedImage}
                             variant="outline"
                           >
                             <Link
@@ -527,7 +552,7 @@ export function HistoryDashboard({
                               target="_blank"
                             >
                               <Eye aria-hidden="true" />
-                              查看
+                              {d.dashboard.view}
                             </Link>
                           </Button>
                         ) : (
@@ -538,24 +563,24 @@ export function HistoryDashboard({
                             variant="outline"
                           >
                             <Eye aria-hidden="true" />
-                            查看
+                            {d.dashboard.view}
                           </Button>
                         )}
                         <Button
                           onClick={() => void copyPrompt(job)}
                           size="sm"
-                          title="复制 prompt"
+                          title={d.common.copy}
                           type="button"
                           variant="outline"
                         >
                           <Copy aria-hidden="true" />
-                          复制
+                          {d.common.copy}
                         </Button>
                         <Button
                           disabled={Boolean(busyJob)}
                           onClick={() => void regenerate(job)}
                           size="sm"
-                          title="使用同一 prompt 重新生成"
+                          title={d.dashboard.regenerateTitle}
                           type="button"
                           variant="outline"
                         >
@@ -567,7 +592,7 @@ export function HistoryDashboard({
                           ) : (
                             <RefreshCw aria-hidden="true" />
                           )}
-                          重新生成
+                          {d.dashboard.regenerate}
                         </Button>
                       </div>
                     </div>
@@ -578,9 +603,11 @@ export function HistoryDashboard({
           </div>
         ) : (
           <div className="rounded-lg border bg-card p-8 text-center">
-            <h3 className="text-base font-medium">暂无生成记录</h3>
+            <h3 className="text-base font-medium">
+              {d.dashboard.emptyImages}
+            </h3>
             <p className="mt-2 text-sm text-muted-foreground">
-              生成完成的图片会显示在这里。
+              {d.dashboard.createdImagesAppear}
             </p>
           </div>
         )}
@@ -592,7 +619,7 @@ export function HistoryDashboard({
             type="button"
             variant="outline"
           >
-            上一页
+            {d.common.previousPage}
           </Button>
           <Button
             disabled={imagePage >= imagePageCount || isPending}
@@ -600,7 +627,7 @@ export function HistoryDashboard({
             type="button"
             variant="outline"
           >
-            下一页
+            {d.common.nextPage}
           </Button>
         </div>
       </section>

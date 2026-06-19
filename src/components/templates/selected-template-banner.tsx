@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Copy, Sparkles } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 
+import { useLanguage } from "@/components/i18n/language-provider";
 import { Button } from "@/components/ui/button";
 import { loadSelectedTemplate, loadTemplates } from "@/lib/templates/storage";
 import { categoryLabels } from "@/lib/templates/types";
@@ -11,6 +12,7 @@ import { categoryLabels } from "@/lib/templates/types";
 type SelectedTemplate = NonNullable<ReturnType<typeof loadSelectedTemplate>>;
 
 export function SelectedTemplateBanner() {
+  const { dictionary } = useLanguage();
   const searchParams = useSearchParams();
   const templateId = searchParams.get("template") || undefined;
   const [selectedTemplate, setSelectedTemplate] =
@@ -61,16 +63,18 @@ export function SelectedTemplateBanner() {
         <div className="space-y-2">
           <div className="flex items-center gap-2 text-sm font-medium">
             <Sparkles aria-hidden="true" className="size-4" />
-            已选择模板
+            {dictionary.templates.selected}
           </div>
           <h2 className="text-lg font-semibold">{selectedTemplate.name}</h2>
           <p className="text-sm text-muted-foreground">
-            分类：{categoryLabels[selectedTemplate.category]}
+            {dictionary.templates.category(
+              categoryLabels[selectedTemplate.category],
+            )}
           </p>
         </div>
         <Button onClick={copyPrompt} size="sm" type="button" variant="outline">
           <Copy aria-hidden="true" />
-          {copied ? "已复制" : "复制提示词"}
+          {copied ? dictionary.templates.copied : dictionary.templates.copyPrompt}
         </Button>
       </div>
       <p className="mt-3 rounded-md bg-secondary p-3 text-xs leading-5 text-muted-foreground">

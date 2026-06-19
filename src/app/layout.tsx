@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 
+import { LanguageProvider } from "@/components/i18n/language-provider";
 import { SiteHeader } from "@/components/layout/site-header";
 import { getAppUrl } from "@/lib/app-url";
+import { getCurrentLanguage } from "@/lib/i18n-server";
 
 import "./globals.css";
 
@@ -40,16 +42,22 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const language = await getCurrentLanguage();
+
   return (
-    <html lang="en">
+    <html lang={language === "zh" ? "zh-CN" : "en"}>
       <body>
-        <SiteHeader />
-        <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">{children}</main>
+        <LanguageProvider initialLanguage={language}>
+          <SiteHeader language={language} />
+          <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
+            {children}
+          </main>
+        </LanguageProvider>
       </body>
     </html>
   );
