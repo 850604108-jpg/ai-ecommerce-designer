@@ -1,10 +1,6 @@
-import { Mail } from "lucide-react";
 import Link from "next/link";
 
-import {
-  signInWithEmail,
-  signInWithGoogle,
-} from "@/app/auth/actions";
+import { signInWithEmail } from "@/app/auth/actions";
 import { AuthMessage, getAuthMessage } from "@/app/auth/auth-message";
 import { Button } from "@/components/ui/button";
 
@@ -23,20 +19,11 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
         </p>
         <h1 className="text-3xl font-semibold tracking-tight">Log in</h1>
         <p className="text-sm leading-6 text-muted-foreground">
-          Use your email password or continue with Google.
+          Use your email and password to access your account.
         </p>
       </div>
 
       <div className="rounded-lg border bg-card p-6">
-        <form action={signInWithGoogle}>
-          <Button className="w-full" type="submit" variant="outline">
-            <Mail aria-hidden="true" />
-            Continue with Google
-          </Button>
-        </form>
-
-        <div className="my-6 h-px bg-border" />
-
         <form action={signInWithEmail} className="space-y-4">
           <AuthMessage error={error} message={message} />
           <div className="space-y-2">

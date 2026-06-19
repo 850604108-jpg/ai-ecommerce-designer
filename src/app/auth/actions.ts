@@ -75,37 +75,6 @@ export async function signInWithEmail(formData: FormData) {
   redirect("/dashboard");
 }
 
-export async function signInWithGoogle() {
-  if (!isSupabaseConfigured()) {
-    redirect(
-      `/login?${encodedMessage(
-        "error",
-        "Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.",
-      )}`,
-    );
-  }
-
-  const supabase = await supabaseServer();
-  const origin = await getOrigin();
-
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: "google",
-    options: {
-      redirectTo: `${origin}/auth/callback?next=/dashboard`,
-    },
-  });
-
-  if (error) {
-    redirect(`/login?${encodedMessage("error", error.message)}`);
-  }
-
-  if (data.url) {
-    redirect(data.url);
-  }
-
-  redirect(`/login?${encodedMessage("error", "Could not start Google login.")}`);
-}
-
 export async function requestPasswordReset(formData: FormData) {
   if (!isSupabaseConfigured()) {
     redirect(

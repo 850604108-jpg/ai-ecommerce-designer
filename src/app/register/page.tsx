@@ -1,7 +1,6 @@
-import { Mail } from "lucide-react";
 import Link from "next/link";
 
-import { signInWithGoogle, signUp } from "@/app/auth/actions";
+import { signUp } from "@/app/auth/actions";
 import { AuthMessage, getAuthMessage } from "@/app/auth/auth-message";
 import { Button } from "@/components/ui/button";
 
@@ -22,20 +21,11 @@ export default async function RegisterPage({
         </p>
         <h1 className="text-3xl font-semibold tracking-tight">Create account</h1>
         <p className="text-sm leading-6 text-muted-foreground">
-          Register with email or use your Google account.
+          Register with your email and password.
         </p>
       </div>
 
       <div className="rounded-lg border bg-card p-6">
-        <form action={signInWithGoogle}>
-          <Button className="w-full" type="submit" variant="outline">
-            <Mail aria-hidden="true" />
-            Continue with Google
-          </Button>
-        </form>
-
-        <div className="my-6 h-px bg-border" />
-
         <form action={signUp} className="space-y-4">
           <AuthMessage error={error} message={message} />
           <div className="space-y-2">
