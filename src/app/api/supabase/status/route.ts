@@ -16,6 +16,22 @@ type BucketStatus = {
   name: string;
 };
 
+type TableStatus = {
+  error: string | null;
+  exists: boolean;
+  name: string;
+};
+
+const requiredDatabaseTables = [
+  "users",
+  "projects",
+  "generated_images",
+  "credits",
+  "user_credit_balances",
+  "templates",
+  "product_recognitions",
+] as const;
+
 async function ensureStorageBuckets() {
   const supabase = supabaseServiceRole();
   const { data: buckets, error: listError } = await supabase.storage.listBuckets();
@@ -59,14 +75,26 @@ async function ensureStorageBuckets() {
 
 async function checkDatabaseConnection() {
   const supabase = supabaseServiceRole();
-  const { error } = await supabase
-    .from("users")
-    .select("id", { count: "exact", head: true })
-    .limit(1);
+  const tables = await Promise.all(
+    requiredDatabaseTables.map(async (name): Promise<TableStatus> => {
+      const { error } = await supabase
+        .from(name)
+        .select("*", { count: "exact", head: true })
+        .limit(1);
+
+      return {
+        error: error?.message || null,
+        exists: !error,
+        name,
+      };
+    }),
+  );
+  const failed = tables.find((table) => !table.exists);
 
   return {
-    error: error?.message || null,
-    ok: !error,
+    error: failed?.error || null,
+    ok: !failed,
+    tables,
   };
 }
 
@@ -80,6 +108,7 @@ export async function GET() {
     database: {
       error: serviceRoleOk ? null : "Supabase service role credentials are missing or invalid.",
       ok: false,
+      tables: [] as TableStatus[],
     },
     serviceRoleConfigured: serviceRoleOk,
     supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || null,

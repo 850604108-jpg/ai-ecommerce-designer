@@ -29,6 +29,7 @@ export const dictionaries = {
       failed: "Failed",
       imageTypes: {
         detail_page_module: "Detail page module",
+        detail_page_long: "9:32 detail page",
         infographic: "Infographic",
         lifestyle: "Lifestyle image",
         main_image: "Main image",
@@ -150,6 +151,7 @@ export const dictionaries = {
       fileReadFailed: "Failed to read image file.",
       generatedImageAlt: (label: string) => `${label} result`,
       generatedImageFallback: "Generated image",
+      generatePrompts: (cost: number) => `Generate prompts · ${cost} Credits`,
       generateCoreImages: (cost: number) =>
         `Generate three core images · ${cost} Credits`,
       generateDetailPage: (cost: number) =>
@@ -160,11 +162,16 @@ export const dictionaries = {
       highlights: "Highlights",
       imageGenerationFailed: "Image generation failed.",
       invalidImage: "Only jpg, jpeg, png, and webp images are supported.",
+      loginRequired: "Login required",
+      loginRequiredDescription:
+        "Please log in before uploading and recognizing product images.",
       promptEngine: "Prompt Engine",
       promptEngineDescription: "Generate platform-ready image prompts.",
       promptGenerationFailed: "Prompt generation failed.",
       promptGenerationInvalid:
         "Prompt generation returned an invalid response.",
+      promptInsufficientCredits: (cost: number) =>
+        `Insufficient credits. Generating prompts requires ${cost} Credits.`,
       product: "Product",
       productRecognitionFailed: "Product recognition failed.",
       productRecognitionInvalid:
@@ -237,6 +244,7 @@ export const dictionaries = {
       failed: "失败",
       imageTypes: {
         detail_page_module: "详情页模块",
+        detail_page_long: "9:32详情页长图",
         infographic: "信息图",
         lifestyle: "场景图",
         main_image: "主图",
@@ -352,6 +360,7 @@ export const dictionaries = {
       fileReadFailed: "图片文件读取失败。",
       generatedImageAlt: (label: string) => `${label} 结果`,
       generatedImageFallback: "生成图",
+      generatePrompts: (cost: number) => `生成提示词 · ${cost} Credits`,
       generateCoreImages: (cost: number) => `生成三张核心图 · ${cost} Credits`,
       generateDetailPage: (cost: number) => `生成详情页 · ${cost} Credits`,
       generatedImageSaved: "已完成并保存到 generated_images 表。",
@@ -360,10 +369,14 @@ export const dictionaries = {
       highlights: "卖点",
       imageGenerationFailed: "图片生成失败。",
       invalidImage: "仅支持 jpg、jpeg、png 和 webp 图片。",
+      loginRequired: "需要登录",
+      loginRequiredDescription: "请先登录，再上传并识别商品图片。",
       promptEngine: "Prompt Engine",
       promptEngineDescription: "生成适配平台的图片提示词。",
       promptGenerationFailed: "提示词生成失败。",
       promptGenerationInvalid: "提示词生成返回了无效响应。",
+      promptInsufficientCredits: (cost: number) =>
+        `剩余积分不足，生成提示词需要 ${cost} Credits。`,
       product: "产品",
       productRecognitionFailed: "产品识别失败。",
       productRecognitionInvalid: "产品识别返回了无效响应。",

@@ -5,6 +5,7 @@ import { ImageUploader } from "@/components/image-uploader";
 import { SelectedTemplateBanner } from "@/components/templates/selected-template-banner";
 import { getDictionary } from "@/lib/i18n";
 import { getCurrentLanguage } from "@/lib/i18n-server";
+import { isSupabaseConfigured, supabaseServer } from "@/lib/supabaseClient";
 
 export const metadata: Metadata = {
   description:
@@ -14,6 +15,8 @@ export const metadata: Metadata = {
 
 export default async function GeneratePage() {
   const dictionary = getDictionary(await getCurrentLanguage());
+  const supabase = isSupabaseConfigured() ? await supabaseServer() : null;
+  const user = supabase ? (await supabase.auth.getUser()).data.user : null;
 
   return (
     <section className="space-y-6">
@@ -28,7 +31,7 @@ export default async function GeneratePage() {
       <Suspense fallback={null}>
         <SelectedTemplateBanner />
       </Suspense>
-      <ImageUploader />
+      <ImageUploader isAuthenticated={Boolean(user)} />
     </section>
   );
 }

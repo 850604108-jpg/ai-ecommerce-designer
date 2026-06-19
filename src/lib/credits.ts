@@ -11,6 +11,7 @@ export const dailyCheckInCredits = Math.max(
   Number.parseInt(process.env.DAILY_CHECK_IN_CREDITS || "10", 10) || 10,
   1,
 );
+export const promptGenerationCreditCost = 3;
 
 export class InsufficientCreditsError extends Error {
   constructor(message = "积分不足，请充值后再生成。") {
@@ -95,6 +96,52 @@ export async function deductImageGenerationCredits(input: {
     creditBalance,
     creditsDeducted: amount,
   };
+}
+
+export async function spendPromptGenerationCredits(input: {
+  amount?: number;
+  metadata?: Record<string, unknown>;
+  userId: string;
+}) {
+  const amount = input.amount || promptGenerationCreditCost;
+  const supabase = supabaseServiceRole();
+  const { data: balanceRow, error: balanceError } = await supabase
+    .from("user_credit_balances")
+    .select("balance_after")
+    .eq("user_id", input.userId)
+    .maybeSingle();
+
+  if (balanceError) {
+    throw new Error(balanceError.message);
+  }
+
+  const currentBalance = Number(balanceRow?.balance_after || 0);
+
+  if (currentBalance < amount) {
+    throw new InsufficientCreditsError();
+  }
+
+  const nextBalance = currentBalance - amount;
+  const { data, error } = await supabase
+    .from("credits")
+    .insert({
+      amount: -amount,
+      balance_after: nextBalance,
+      metadata: {
+        ...input.metadata,
+        source: "prompt_engine",
+      },
+      transaction_type: "spend",
+      user_id: input.userId,
+    })
+    .select("balance_after")
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return Number(data.balance_after || nextBalance);
 }
 
 export async function refundImageGenerationCredits(input: {

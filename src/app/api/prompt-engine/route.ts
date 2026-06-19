@@ -1,4 +1,10 @@
-import { apiOk, handleApiError } from "@/lib/api-response";
+import { apiError, apiOk, handleApiError } from "@/lib/api-response";
+import {
+  getUserCreditBalance,
+  InsufficientCreditsError,
+  promptGenerationCreditCost,
+  spendPromptGenerationCredits,
+} from "@/lib/credits";
 import {
   ecommercePlatforms,
   generatePromptSet,
@@ -7,6 +13,7 @@ import {
   type PromptEngineInput,
 } from "@/lib/prompt-engine";
 import { enhancePromptSetWithOpenAI } from "@/lib/prompt-engine/openai";
+import { supabaseServer } from "@/lib/supabaseClient";
 
 function normalizeBody(value: unknown): PromptEngineInput {
   const record =
@@ -25,7 +32,27 @@ function normalizeBody(value: unknown): PromptEngineInput {
 }
 
 export async function POST(request: Request) {
+  let supabase: Awaited<ReturnType<typeof supabaseServer>> | null = null;
+  let userId: string | null = null;
+
   try {
+    supabase = await supabaseServer();
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return apiError({ code: "UNAUTHORIZED", status: 401 });
+    }
+
+    userId = user.id;
+    const currentBalance = await getUserCreditBalance(supabase, user.id);
+
+    if (currentBalance < promptGenerationCreditCost) {
+      throw new InsufficientCreditsError();
+    }
+
     const body = (await request.json()) as Record<string, unknown>;
     const platform = isEcommercePlatform(body.platform)
       ? body.platform
@@ -42,13 +69,37 @@ export async function POST(request: Request) {
             platformLabel: getPlatformProfile(resolvedPlatform).label,
             prompts: deterministicPrompts,
           });
+    const creditBalance = await spendPromptGenerationCredits({
+      metadata: {
+        category: input.category,
+        platform: resolvedPlatform,
+        product_name: input.product_name,
+      },
+      userId: user.id,
+    });
 
     return apiOk({
+      credit_balance: creditBalance,
+      credits_deducted: promptGenerationCreditCost,
       platform: resolvedPlatform,
       supportedPlatforms: ecommercePlatforms,
       prompts,
     });
   } catch (error) {
+    const creditBalance =
+      supabase && userId
+        ? await getUserCreditBalance(supabase, userId).catch(() => null)
+        : null;
+
+    if (error instanceof InsufficientCreditsError) {
+      return apiError({
+        code: "PAYMENT_REQUIRED",
+        error,
+        extra: { credit_balance: creditBalance },
+        status: 402,
+      });
+    }
+
     return handleApiError(error, "Prompt generation failed.", { status: 400 });
   }
 }

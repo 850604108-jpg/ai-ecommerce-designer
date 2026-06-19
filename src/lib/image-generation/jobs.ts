@@ -9,7 +9,9 @@ import {
 
 import { generateImageWithOpenAI } from "./openai";
 import {
+  isGeneratedImageSize,
   isGeneratedImageType,
+  type GeneratedImageSize,
   type GeneratedImageHistoryJob,
   type GeneratedImageJob,
   type GeneratedImageType,
@@ -100,6 +102,7 @@ export async function queueImageGenerationJob(input: {
   projectId?: string;
   recognitionId?: string | null;
   moduleId?: string | null;
+  size?: GeneratedImageSize;
 }) {
   const prompt = input.prompt.trim();
 
@@ -111,7 +114,9 @@ export async function queueImageGenerationJob(input: {
     input.projectId ||
     (await getOrCreateGenerationProject(input.supabase, input.userId));
 
-  const size = input.imageType === "detail_page_module" ? "1536x1024" : defaultSize;
+  const size =
+    input.size ||
+    (input.imageType === "detail_page_module" ? "1536x1024" : defaultSize);
   const [width, height] = size.split("x").map(Number);
   const creditCost = getImageGenerationCreditCost(input.imageType);
 
@@ -327,7 +332,7 @@ export async function regenerateImageGenerationJob(input: {
 }) {
   const { data, error } = await input.supabase
     .from("generated_images")
-    .select("prompt,metadata")
+    .select("prompt,metadata,generation_params")
     .eq("id", input.jobId)
     .eq("user_id", input.userId)
     .neq("status", "deleted")
@@ -355,6 +360,11 @@ export async function regenerateImageGenerationJob(input: {
         ? metadata.product_recognition_id
         : null,
     moduleId: typeof metadata.module_id === "string" ? metadata.module_id : null,
+    size: isGeneratedImageSize(
+      (data.generation_params as Record<string, unknown> | null)?.size,
+    )
+      ? ((data.generation_params as Record<string, unknown>).size as GeneratedImageSize)
+      : undefined,
   });
 }
 

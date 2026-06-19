@@ -4,7 +4,10 @@ import {
   queueImageGenerationJob,
 } from "@/lib/image-generation/jobs";
 import { getUserCreditBalance, InsufficientCreditsError } from "@/lib/credits";
-import { isGeneratedImageType } from "@/lib/image-generation/types";
+import {
+  isGeneratedImageSize,
+  isGeneratedImageType,
+} from "@/lib/image-generation/types";
 import { supabaseServer } from "@/lib/supabaseClient";
 
 function normalizeIds(value: string | null) {
@@ -71,6 +74,7 @@ export async function POST(request: Request) {
       typeof body.recognition_id === "string" ? body.recognition_id : null;
     const moduleId =
       typeof body.module_id === "string" ? body.module_id : null;
+    const size = isGeneratedImageSize(body.size) ? body.size : undefined;
 
     if (!isGeneratedImageType(imageType)) {
       return apiError({
@@ -89,6 +93,7 @@ export async function POST(request: Request) {
       platform,
       recognitionId,
       moduleId,
+      size,
     });
     const creditBalance = await getUserCreditBalance(supabase, user.id);
 

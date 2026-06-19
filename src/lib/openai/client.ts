@@ -35,18 +35,51 @@ export function getOpenAIApiKey() {
   return apiKey;
 }
 
+function getOpenAIBaseUrl() {
+  return (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1")
+    .trim()
+    .replace(/\/+$/, "");
+}
+
+function getOpenAIProxyUrl() {
+  return (
+    process.env.OPENAI_PROXY_URL ||
+    process.env.HTTPS_PROXY ||
+    process.env.HTTP_PROXY ||
+    process.env.ALL_PROXY ||
+    ""
+  ).trim();
+}
+
 export async function openAIFetch<TPayload>(
   path: string,
   body: Record<string, unknown>,
 ) {
-  const response = await fetch(`https://api.openai.com/v1/${path}`, {
+  const proxyUrl = getOpenAIProxyUrl();
+  const url = `${getOpenAIBaseUrl()}/${path.replace(/^\/+/, "")}`;
+  const init = {
     method: "POST",
     headers: {
       Authorization: `Bearer ${getOpenAIApiKey()}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
-  });
+  } satisfies RequestInit;
+  let response: Response;
+
+  if (proxyUrl) {
+    const { ProxyAgent, fetch: undiciFetch } = await import("undici");
+    const proxyInit = {
+      method: init.method,
+      headers: init.headers as Record<string, string>,
+      body: init.body as string,
+      dispatcher: new ProxyAgent(proxyUrl),
+    };
+
+    response = (await undiciFetch(url, proxyInit)) as unknown as Response;
+  } else {
+    response = await fetch(url, init);
+  }
 
   const payload = (await response.json()) as TPayload & OpenAIErrorPayload;
 

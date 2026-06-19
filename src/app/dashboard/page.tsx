@@ -33,6 +33,51 @@ function getParam(
   return Array.isArray(value) ? value[0] || "" : value || "";
 }
 
+function isMissingSupabaseSchemaError(error: unknown, tableNames: string[]) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  const mentionsRequiredTable = tableNames.some((tableName) =>
+    message.includes(tableName.toLowerCase()),
+  );
+
+  return (
+    mentionsRequiredTable &&
+    (message.includes("schema cache") ||
+      message.includes("could not find the table") ||
+      message.includes("does not exist"))
+  );
+}
+
+function getDatabaseSetupMessage(language: "en" | "zh") {
+  return language === "zh"
+    ? "数据库表还没有初始化。请先在 Supabase SQL Editor 中按顺序执行 supabase/migrations 下的迁移文件，然后刷新 Dashboard。"
+    : "The database tables have not been initialized yet. Run the migration files in supabase/migrations in order from the Supabase SQL Editor, then refresh Dashboard.";
+}
+
+function getEmptyDashboardData() {
+  return {
+    creditBalance: null,
+    history: {
+      jobs: [],
+      page: 1,
+      pageCount: 1,
+      pageSize: 8,
+      projectCount: 0,
+      totalCount: 0,
+    },
+    projects: {
+      page: 1,
+      pageCount: 1,
+      pageSize: 6,
+      projects: [],
+      totalCount: 0,
+    },
+  };
+}
+
 export default async function DashboardPage({
   searchParams,
 }: DashboardPageProps) {
@@ -61,7 +106,7 @@ export default async function DashboardPage({
 
   if (supabase && user) {
     try {
-      const [projects, history, creditBalance] = await Promise.all([
+      const [projects, history] = await Promise.all([
         listDashboardProjects({
           supabase,
           userId: user.id,
@@ -76,13 +121,22 @@ export default async function DashboardPage({
           page: imagePage,
           pageSize: 8,
         }),
-        getUserCreditBalance(supabase, user.id),
       ]);
+      const creditBalance = await getUserCreditBalance(supabase, user.id).catch(
+        () => null,
+      );
 
       dashboardData = { creditBalance, history, projects };
     } catch (error) {
-      dashboardError =
-        error instanceof Error ? error.message : dictionary.dashboard.loadFailedMessage;
+      if (isMissingSupabaseSchemaError(error, ["projects", "generated_images"])) {
+        dashboardData = getEmptyDashboardData();
+        dashboardError = getDatabaseSetupMessage(language);
+      } else {
+        dashboardError =
+          error instanceof Error
+            ? error.message
+            : dictionary.dashboard.loadFailedMessage;
+      }
     }
   }
 

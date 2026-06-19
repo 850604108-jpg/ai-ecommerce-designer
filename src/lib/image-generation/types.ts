@@ -3,6 +3,7 @@ export const generatedImageTypes = [
   "lifestyle",
   "infographic",
   "detail_page_module",
+  "detail_page_long",
 ] as const;
 
 export type GeneratedImageType = (typeof generatedImageTypes)[number];
@@ -13,6 +14,14 @@ export type GeneratedImageStatus =
   | "completed"
   | "failed"
   | "deleted";
+
+export const generatedImageSizes = [
+  "1024x1024",
+  "1024x1536",
+  "1536x1024",
+] as const;
+
+export type GeneratedImageSize = (typeof generatedImageSizes)[number];
 
 export type GeneratedImageJob = {
   id: string;
@@ -51,6 +60,7 @@ export const generatedImageTypeLabels: Record<GeneratedImageType, string> = {
   lifestyle: "场景图",
   infographic: "信息图",
   detail_page_module: "详情页模块",
+  detail_page_long: "9:32详情页长图",
 };
 
 export const imageGenerationCreditCosts: Record<GeneratedImageType, number> = {
@@ -58,6 +68,7 @@ export const imageGenerationCreditCosts: Record<GeneratedImageType, number> = {
   lifestyle: 2,
   infographic: 2,
   detail_page_module: 3,
+  detail_page_long: 3,
 };
 
 export function isGeneratedImageType(
@@ -66,5 +77,14 @@ export function isGeneratedImageType(
   return (
     typeof value === "string" &&
     generatedImageTypes.includes(value as GeneratedImageType)
+  );
+}
+
+export function isGeneratedImageSize(
+  value: unknown,
+): value is GeneratedImageSize {
+  return (
+    typeof value === "string" &&
+    generatedImageSizes.includes(value as GeneratedImageSize)
   );
 }

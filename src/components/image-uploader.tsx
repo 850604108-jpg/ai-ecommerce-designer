@@ -17,6 +17,7 @@ import {
   XCircle,
 } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 
 import { useLanguage } from "@/components/i18n/language-provider";
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,7 @@ import {
 } from "@/lib/prompt-engine";
 import {
   imageGenerationCreditCosts,
+  type GeneratedImageSize,
   type GeneratedImageJob,
   type GeneratedImageType,
 } from "@/lib/image-generation/types";
@@ -40,6 +42,7 @@ const allowedTypes = new Set([
 ]);
 
 const allowedExtensions = new Set(["jpg", "jpeg", "png", "webp"]);
+const promptGenerationCreditCost = 3;
 
 type UploadResult = {
   imageUrl: string;
@@ -70,28 +73,32 @@ type RecognitionState = "idle" | "recognizing" | "success" | "error";
 
 type PromptState = "idle" | "generating" | "success" | "error";
 
-type PromptImageConfig = {
-  imageType: GeneratedImageType;
-  promptKey: keyof Pick<
-    PromptEngineOutput,
-    "mainImagePrompt" | "lifestylePrompt" | "infographicPrompt"
-  >;
-};
-
 type ImageQueueState = "idle" | "queueing" | "processing" | "success" | "error";
 
 type ExportState = "idle" | "exporting" | "error";
+type GenerationMode = "main" | "detail";
+type DetailGenerationMode = "modules" | "long";
 
-const imagePromptConfigs: PromptImageConfig[] = [
-  { imageType: "main_image", promptKey: "mainImagePrompt" },
-  { imageType: "lifestyle", promptKey: "lifestylePrompt" },
-  { imageType: "infographic", promptKey: "infographicPrompt" },
+const mainImageCountOptions = [1, 2, 3, 4, 5, 6, 7, 8] as const;
+const detailModuleIds = [
+  "AD-01",
+  "AD-02",
+  "AD-03",
+  "AD-04",
+  "AD-05",
+  "AD-06",
+  "AD-07",
+] as const;
+
+const detailAspectOptions: Array<{
+  label: string;
+  size: GeneratedImageSize;
+  value: "wide" | "square" | "vertical";
+}> = [
+  { label: "横版 3:2", size: "1536x1024", value: "wide" },
+  { label: "方图 1:1", size: "1024x1024", value: "square" },
+  { label: "竖版 2:3", size: "1024x1536", value: "vertical" },
 ];
-
-const coreImageCreditCost = imagePromptConfigs.reduce(
-  (total, config) => total + imageGenerationCreditCosts[config.imageType],
-  0,
-);
 
 const platformLabels: Record<EcommercePlatform, string> = {
   taobao: "淘宝",
@@ -295,6 +302,7 @@ async function generatePrompts(
   const payload = (await response.json().catch(() => ({
     error: "Prompt generation returned an invalid response.",
   }))) as {
+    credit_balance?: number | null;
     error?: string;
     prompts?: unknown;
   };
@@ -303,7 +311,11 @@ async function generatePrompts(
     throw new Error(payload.error || "Prompt generation failed.");
   }
 
-  return normalizePromptOutput(payload.prompts);
+  return {
+    creditBalance:
+      typeof payload.credit_balance === "number" ? payload.credit_balance : null,
+    prompts: normalizePromptOutput(payload.prompts),
+  };
 }
 
 async function queueGeneratedImage(input: {
@@ -312,6 +324,7 @@ async function queueGeneratedImage(input: {
   platform: EcommercePlatform;
   recognitionId?: string;
   moduleId?: string;
+  size?: GeneratedImageSize;
 }) {
   const response = await fetch("/api/image-generation", {
     method: "POST",
@@ -322,6 +335,7 @@ async function queueGeneratedImage(input: {
       platform: input.platform,
       recognition_id: input.recognitionId,
       module_id: input.moduleId,
+      size: input.size,
     }),
   });
   const payload = (await response.json()) as {
@@ -411,6 +425,69 @@ function getDetailPageJobs(jobs: GeneratedImageJob[]) {
     .sort((a, b) => getDetailModuleId(a).localeCompare(getDetailModuleId(b)));
 }
 
+function getModuleIdIndex(moduleId: string) {
+  return detailModuleIds.findIndex((id) => id === moduleId);
+}
+
+function getSelectedDetailModules(
+  modules: PromptEngineOutput["detailPageModules"],
+  startId: string,
+  endId: string,
+) {
+  const startIndex = Math.max(getModuleIdIndex(startId), 0);
+  const endIndex = Math.max(getModuleIdIndex(endId), startIndex);
+  const selectedIds = new Set<string>(
+    detailModuleIds.slice(startIndex, endIndex + 1),
+  );
+
+  return modules.filter((module) => selectedIds.has(module.id));
+}
+
+function buildMainImagePromptVariant(prompt: string, index: number, total: number) {
+  return [
+    prompt,
+    `本次生成主图 AM-${String(index + 1).padStart(2, "0")} / ${total}。`,
+    "保持 1:1 方图，商品完整清晰，白底或浅色干净商业背景，适合作为电商主图候选。",
+    "同批多张主图之间只变化角度、光线、摆放层次或轻量道具，不改变商品结构、颜色、包装文字和真实比例。",
+  ].join("\n\n");
+}
+
+function buildDetailImagePromptVariant(input: {
+  aspectLabel: string;
+  basePrompt: string;
+}) {
+  return [
+    input.basePrompt,
+    `用户选择的详情页比例：${input.aspectLabel}。`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function buildLongDetailPagePrompt(promptOutput: PromptEngineOutput) {
+  const modules = promptOutput.detailPageModules.length
+    ? promptOutput.detailPageModules
+    : detailModuleIds.map((id) => ({
+        description: "围绕商品卖点设计一个完整详情页段落。",
+        id,
+        imagePrompt: "",
+        title: id,
+      }));
+
+  return [
+    promptOutput.detailPagePrompt,
+    "任务：生成一张完整 9:32 电商详情页长图，不是单个 AD 模块，也不是多张模块拼接。",
+    "画幅与结构：按 9:32 超长竖版详情页设计，顶部到尾部是一张完整页面。当前图像生成尺寸作为预览画布使用，但版式必须体现完整长详情页的信息流。",
+    "Amazon A+/详情页规则：每一屏都有一个大观点、一个视觉事件、一个环境或细节层；模块之间节奏变化，避免连续居中商品图或重复标签。",
+    "页面顺序：首屏价值主视觉 -> 痛点/解决方案 -> 核心卖点证明 -> 结构/细节特写 -> 使用场景 -> 规格/适配 -> FAQ/购买前确认。",
+    "视觉要求：保留清晰标题区、短副标题和 1-4 个证明标签；文字集中成组，不覆盖商品关键结构；商品形态、颜色、比例、包装文字必须保持真实一致。",
+    "负面约束：不要做成单张海报，不要只做拼贴缩略图，不要编造认证/参数/价格/促销，不要霓虹光效或大段不可读小字。",
+    `参考 AD 信息：${modules
+      .map((module) => `${module.id} ${module.title}：${module.description}`)
+      .join("；")}`,
+  ].join("\n\n");
+}
+
 async function loadImageForCanvas(url: string) {
   const response = await fetch(url);
 
@@ -449,12 +526,20 @@ async function buildDetailPageCanvas(jobs: GeneratedImageJob[]) {
   canvas.width = width;
   canvas.height = height;
   context.fillStyle = "#ffffff";
-  context.fillRect(0, 0, width, height);
+  context.fillRect(0, 0, canvas.width, canvas.height);
 
   let offsetY = 0;
   images.forEach((image) => {
-    context.drawImage(image, 0, offsetY, width, image.naturalHeight);
-    offsetY += image.naturalHeight;
+    const drawWidth = canvas.width;
+    const drawHeight = Math.round(
+      (image.naturalHeight / image.naturalWidth) * drawWidth,
+    );
+
+    if (offsetY < canvas.height) {
+      context.drawImage(image, 0, offsetY, drawWidth, drawHeight);
+    }
+
+    offsetY += drawHeight;
     URL.revokeObjectURL(image.src);
   });
 
@@ -471,7 +556,11 @@ function downloadBlob(blob: Blob, fileName: string) {
   URL.revokeObjectURL(url);
 }
 
-export function ImageUploader() {
+export function ImageUploader({
+  isAuthenticated,
+}: {
+  isAuthenticated: boolean;
+}) {
   const { dictionary } = useLanguage();
   const inputId = useId();
   const [file, setFile] = useState<File | null>(null);
@@ -486,6 +575,15 @@ export function ImageUploader() {
   const [promptError, setPromptError] = useState("");
   const [selectedPlatform, setSelectedPlatform] =
     useState<EcommercePlatform>("taobao");
+  const [generationMode, setGenerationMode] =
+    useState<GenerationMode>("main");
+  const [detailGenerationMode, setDetailGenerationMode] =
+    useState<DetailGenerationMode>("modules");
+  const [mainImageCount, setMainImageCount] = useState<number>(1);
+  const [detailStartId, setDetailStartId] = useState<string>("AD-01");
+  const [detailEndId, setDetailEndId] = useState<string>("AD-06");
+  const [detailAspect, setDetailAspect] =
+    useState<(typeof detailAspectOptions)[number]["value"]>("wide");
   const [prompts, setPrompts] = useState<PromptEngineOutput | null>(null);
   const [imageQueueStatus, setImageQueueStatus] =
     useState<ImageQueueState>("idle");
@@ -556,6 +654,12 @@ export function ImageUploader() {
       return;
     }
 
+    if (!isAuthenticated) {
+      setStatus("error");
+      setError(dictionary.imageUploader.loginRequiredDescription);
+      return;
+    }
+
     setStatus("uploading");
     setRecognitionStatus("idle");
     setProgress(0);
@@ -597,7 +701,6 @@ export function ImageUploader() {
       });
       setResult({ ...uploadResult, recognition });
       setRecognitionStatus("success");
-      await handlePromptGeneration(recognition, selectedPlatform);
     } catch (recognitionError) {
       setRecognitionStatus("error");
       setError(
@@ -617,8 +720,11 @@ export function ImageUploader() {
     setPrompts(null);
 
     try {
-      const nextPrompts = await generatePrompts(recognition, platform);
-      setPrompts(nextPrompts);
+      const result = await generatePrompts(recognition, platform);
+      setPrompts(result.prompts);
+      if (result.creditBalance !== null) {
+        setCreditBalance(result.creditBalance);
+      }
       setPromptStatus("success");
     } catch (promptGenerationError) {
       setPromptStatus("error");
@@ -634,13 +740,12 @@ export function ImageUploader() {
     setSelectedPlatform(platform);
     setImageQueueStatus("idle");
     setImageQueueError("");
+    setPromptStatus("idle");
+    setPromptError("");
+    setPrompts(null);
     setGeneratedImageJobs([]);
     setDetailPageExportStatus("idle");
     setDetailPageExportError("");
-
-    if (result?.recognition) {
-      void handlePromptGeneration(result.recognition, platform);
-    }
   }
 
   function upsertGeneratedImageJob(nextJob: GeneratedImageJob) {
@@ -659,7 +764,7 @@ export function ImageUploader() {
     });
   }
 
-  async function handleGenerateImages() {
+  async function handleGenerateMainImages() {
     if (!prompts || imageQueueStatus === "queueing") {
       return;
     }
@@ -672,12 +777,18 @@ export function ImageUploader() {
 
     try {
       const queuedResults = await Promise.all(
-        imagePromptConfigs.map((config) =>
+        Array.from({ length: mainImageCount }, (_, index) =>
           queueGeneratedImage({
-            imageType: config.imageType,
-            prompt: prompts[config.promptKey],
+            imageType: "main_image",
+            prompt: buildMainImagePromptVariant(
+              prompts.mainImagePrompt,
+              index,
+              mainImageCount,
+            ),
             platform: selectedPlatform,
             recognitionId: result?.recognition?.id,
+            moduleId: `AM-${String(index + 1).padStart(2, "0")}`,
+            size: "1024x1024",
           }),
         ),
       );
@@ -727,9 +838,21 @@ export function ImageUploader() {
   }
 
   async function handleGenerateDetailPage() {
-    const detailModules = normalizePromptOutput(prompts).detailPageModules;
+    const normalized = normalizePromptOutput(prompts);
+    const isLongDetailPage = detailGenerationMode === "long";
+    const detailModules = getSelectedDetailModules(
+      normalized.detailPageModules,
+      detailStartId,
+      detailEndId,
+    );
+    const aspectOption =
+      detailAspectOptions.find((option) => option.value === detailAspect) ||
+      detailAspectOptions[0];
 
-    if (!detailModules.length || imageQueueStatus === "queueing") {
+    if (
+      (!isLongDetailPage && !detailModules.length) ||
+      imageQueueStatus === "queueing"
+    ) {
       return;
     }
 
@@ -742,17 +865,32 @@ export function ImageUploader() {
     let queuedJobs: GeneratedImageJob[] = [];
 
     try {
-      const queuedResults = await Promise.all(
-        detailModules.map((module) =>
-          queueGeneratedImage({
-            imageType: "detail_page_module",
-            prompt: module.imagePrompt,
-            platform: selectedPlatform,
-            recognitionId: result?.recognition?.id,
-            moduleId: module.id,
-          }),
-        ),
-      );
+      const queuedResults = isLongDetailPage
+        ? [
+            await queueGeneratedImage({
+              imageType: "detail_page_long",
+              prompt: buildLongDetailPagePrompt(normalized),
+              platform: selectedPlatform,
+              recognitionId: result?.recognition?.id,
+              moduleId: "AD-LONG",
+              size: "1024x1536",
+            }),
+          ]
+        : await Promise.all(
+            detailModules.map((module) =>
+              queueGeneratedImage({
+                imageType: "detail_page_module",
+                prompt: buildDetailImagePromptVariant({
+                  aspectLabel: aspectOption.label,
+                  basePrompt: module.imagePrompt,
+                }),
+                platform: selectedPlatform,
+                recognitionId: result?.recognition?.id,
+                moduleId: module.id,
+                size: aspectOption.size,
+              }),
+            ),
+          );
       queuedJobs = queuedResults.map((result) => result.job);
       const latestBalance = queuedResults.findLast(
         (result) => result.creditBalance !== null,
@@ -871,20 +1009,196 @@ export function ImageUploader() {
   const normalizedPrompts = prompts
     ? normalizePromptOutput(prompts)
     : emptyPromptOutput;
-  const detailPageModules = normalizedPrompts.detailPageModules;
+  const detailPageModules = getSelectedDetailModules(
+    normalizedPrompts.detailPageModules,
+    detailStartId,
+    detailEndId,
+  );
   const detailPageJobs = getDetailPageJobs(generatedImageJobs);
   const canDownloadDetailPage =
     Boolean(detailPageModules.length) &&
     detailPageJobs.length === detailPageModules.length;
+  const mainImageCreditCost =
+    mainImageCount * imageGenerationCreditCosts.main_image;
   const detailPageCreditCost =
-    detailPageModules.length * imageGenerationCreditCosts.detail_page_module;
-  const canAffordCoreImages =
-    creditBalance === null || creditBalance >= coreImageCreditCost;
+    detailGenerationMode === "long"
+      ? imageGenerationCreditCosts.detail_page_long
+      : detailPageModules.length * imageGenerationCreditCosts.detail_page_module;
+  const canAffordMainImages =
+    creditBalance === null || creditBalance >= mainImageCreditCost;
   const canAffordDetailPage =
     creditBalance === null || creditBalance >= detailPageCreditCost;
+  const canAffordPromptGeneration =
+    creditBalance === null || creditBalance >= promptGenerationCreditCost;
+  const isMainMode = generationMode === "main";
+  const isDetailMode = generationMode === "detail";
+  const isLongDetailMode = detailGenerationMode === "long";
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(280px,380px)]">
+    <div className="space-y-5">
+      <div className="rounded-lg border bg-card p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 className="text-base font-medium">生成设置</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              先选择要生成的图片类型和规格，再上传图片识别商品信息。
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              className={cn(
+                isMainMode && "border-primary bg-secondary",
+              )}
+              onClick={() => setGenerationMode("main")}
+              type="button"
+              variant={isMainMode ? "default" : "outline"}
+            >
+              主图
+            </Button>
+            <Button
+              className={cn(
+                isDetailMode && "border-primary bg-secondary",
+              )}
+              onClick={() => setGenerationMode("detail")}
+              type="button"
+              variant={isDetailMode ? "default" : "outline"}
+            >
+              详情页
+            </Button>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 lg:grid-cols-2">
+          {isMainMode ? (
+          <div className="rounded-md border p-3 lg:col-span-2">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-medium">主图生成</h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  主图固定为 1:1 方图，每张消耗 1 Credit。
+                </p>
+              </div>
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                数量
+                <select
+                  className="h-8 rounded-md border bg-background px-2 text-sm text-foreground"
+                  onChange={(event) =>
+                    setMainImageCount(Number(event.target.value))
+                  }
+                  value={mainImageCount}
+                >
+                  {mainImageCountOptions.map((count) => (
+                    <option key={count} value={count}>
+                      {count}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </div>
+          ) : null}
+
+          {isDetailMode ? (
+          <div className="rounded-md border p-3 lg:col-span-2">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-medium">详情页生成</h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  可生成 AD 模块组，也可单独生成一张完整 9:32 详情页长图。
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  onClick={() => setDetailGenerationMode("modules")}
+                  size="sm"
+                  type="button"
+                  variant={detailGenerationMode === "modules" ? "default" : "outline"}
+                >
+                  AD 模块
+                </Button>
+                <Button
+                  onClick={() => setDetailGenerationMode("long")}
+                  size="sm"
+                  type="button"
+                  variant={detailGenerationMode === "long" ? "default" : "outline"}
+                >
+                  9:32 长图
+                </Button>
+              </div>
+            </div>
+
+            {detailGenerationMode === "modules" ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                  从
+                  <select
+                    className="h-8 rounded-md border bg-background px-2 text-sm text-foreground"
+                    onChange={(event) => {
+                      const nextStart = event.target.value;
+                      setDetailStartId(nextStart);
+                      if (
+                        getModuleIdIndex(nextStart) >
+                        getModuleIdIndex(detailEndId)
+                      ) {
+                        setDetailEndId(nextStart);
+                      }
+                    }}
+                    value={detailStartId}
+                  >
+                    {detailModuleIds.map((id) => (
+                      <option key={id} value={id}>
+                        {id}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                  到
+                  <select
+                    className="h-8 rounded-md border bg-background px-2 text-sm text-foreground"
+                    onChange={(event) => {
+                      const nextEnd = event.target.value;
+                      setDetailEndId(nextEnd);
+                      if (
+                        getModuleIdIndex(nextEnd) < getModuleIdIndex(detailStartId)
+                      ) {
+                        setDetailStartId(nextEnd);
+                      }
+                    }}
+                    value={detailEndId}
+                  >
+                    {detailModuleIds.map((id) => (
+                      <option key={id} value={id}>
+                        {id}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <select
+                  className="h-8 rounded-md border bg-background px-2 text-sm"
+                  onChange={(event) =>
+                    setDetailAspect(event.target.value as typeof detailAspect)
+                  }
+                  value={detailAspect}
+                >
+                  {detailAspectOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <p className="mt-3 rounded-md bg-secondary p-3 text-xs leading-5 text-muted-foreground">
+                9:32 长图会作为独立生成任务，只生成一张完整详情页长图，提示词按 Amazon A+/详情页完整页面结构组织。
+              </p>
+            )}
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(280px,380px)]">
       <div
         className={cn(
           "flex min-h-[320px] flex-col items-center justify-center rounded-lg border border-dashed bg-card p-6 text-center transition-colors",
@@ -944,7 +1258,7 @@ export function ImageUploader() {
             <label htmlFor={inputId}>{dictionary.imageUploader.chooseFile}</label>
           </Button>
           <Button
-            disabled={!file || status === "uploading"}
+            disabled={!file || status === "uploading" || !isAuthenticated}
             onClick={handleUpload}
             type="button"
           >
@@ -980,6 +1294,20 @@ export function ImageUploader() {
             <XCircle aria-hidden="true" className="size-5 text-destructive" />
           ) : null}
         </div>
+
+        {!isAuthenticated ? (
+          <div className="mt-5 rounded-md border border-destructive/30 bg-destructive/10 p-3">
+            <p className="text-sm font-medium text-destructive">
+              {dictionary.imageUploader.loginRequired}
+            </p>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">
+              {dictionary.imageUploader.loginRequiredDescription}
+            </p>
+            <Button asChild className="mt-3" size="sm" variant="outline">
+              <Link href="/login">{dictionary.account.login}</Link>
+            </Button>
+          </div>
+        ) : null}
 
         {file ? (
           <div className="mt-5 space-y-2 text-sm">
@@ -1100,6 +1428,52 @@ export function ImageUploader() {
                     </select>
                   </div>
 
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border p-3 text-sm">
+                    <div className="flex items-center gap-2">
+                      <Coins aria-hidden="true" className="size-4" />
+                      <span className="text-muted-foreground">
+                        {dictionary.imageUploader.remainingCredits}
+                      </span>
+                      <span className="font-semibold">
+                        {creditBalance === null ? "--" : creditBalance}
+                      </span>
+                    </div>
+                    <Button
+                      disabled={
+                        promptStatus === "generating" ||
+                        !result.recognition ||
+                        !canAffordPromptGeneration
+                      }
+                      onClick={() =>
+                        result.recognition
+                          ? void handlePromptGeneration(
+                              result.recognition,
+                              selectedPlatform,
+                            )
+                          : undefined
+                      }
+                      size="sm"
+                      type="button"
+                    >
+                      {promptStatus === "generating" ? (
+                        <Loader2 aria-hidden="true" className="animate-spin" />
+                      ) : (
+                        <WandSparkles aria-hidden="true" />
+                      )}
+                      {dictionary.imageUploader.generatePrompts(
+                        promptGenerationCreditCost,
+                      )}
+                    </Button>
+                  </div>
+
+                  {!canAffordPromptGeneration ? (
+                    <p className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                      {dictionary.imageUploader.promptInsufficientCredits(
+                        promptGenerationCreditCost,
+                      )}
+                    </p>
+                  ) : null}
+
                   {promptStatus === "generating" ? (
                     <div className="mt-4 flex items-center gap-2 rounded-md bg-secondary p-3 text-sm">
                       <Loader2
@@ -1118,18 +1492,7 @@ export function ImageUploader() {
 
                   {prompts ? (
                     <div className="mt-4 space-y-3">
-                      <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3 text-sm">
-                        <div className="flex items-center gap-2">
-                          <Coins aria-hidden="true" className="size-4" />
-                          <span className="text-muted-foreground">
-                            {dictionary.imageUploader.remainingCredits}
-                          </span>
-                        </div>
-                        <span className="font-semibold">
-                          {creditBalance === null ? "--" : creditBalance}
-                        </span>
-                      </div>
-
+                      {isMainMode ? (
                       <div className="rounded-md border p-3">
                         <div className="flex flex-wrap items-center justify-between gap-3">
                           <div>
@@ -1143,29 +1506,30 @@ export function ImageUploader() {
                               }
                             </p>
                           </div>
-                          <Button
-                            disabled={
-                              imageQueueStatus === "queueing" ||
-                              imageQueueStatus === "processing" ||
-                              !canAffordCoreImages
-                            }
-                            onClick={handleGenerateImages}
-                            size="sm"
-                            type="button"
-                          >
-                            {imageQueueStatus === "queueing" ||
-                            imageQueueStatus === "processing" ? (
-                              <Loader2
-                                aria-hidden="true"
-                                className="animate-spin"
-                              />
-                            ) : (
-                              <WandSparkles aria-hidden="true" />
-                            )}
-                            {dictionary.imageUploader.generateCoreImages(
-                              coreImageCreditCost,
-                            )}
-                          </Button>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Button
+                              disabled={
+                                !isMainMode ||
+                                imageQueueStatus === "queueing" ||
+                                imageQueueStatus === "processing" ||
+                                !canAffordMainImages
+                              }
+                              onClick={handleGenerateMainImages}
+                              size="sm"
+                              type="button"
+                            >
+                              {imageQueueStatus === "queueing" ||
+                              imageQueueStatus === "processing" ? (
+                                <Loader2
+                                  aria-hidden="true"
+                                  className="animate-spin"
+                                />
+                              ) : (
+                                <WandSparkles aria-hidden="true" />
+                              )}
+                              主图 1:1 · {mainImageCreditCost} Credits
+                            </Button>
+                          </div>
                         </div>
 
                         {imageQueueStatus === "queueing" ? (
@@ -1175,11 +1539,9 @@ export function ImageUploader() {
                           </div>
                         ) : null}
 
-                        {!canAffordCoreImages ? (
+                        {isMainMode && !canAffordMainImages ? (
                           <p className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-                            {dictionary.imageUploader.coreImageInsufficientCredits(
-                              coreImageCreditCost,
-                            )}
+                            剩余积分不足，请减少生成数量或先补充积分。
                           </p>
                         ) : null}
 
@@ -1299,7 +1661,9 @@ export function ImageUploader() {
                           </div>
                         ) : null}
                       </div>
+                      ) : null}
 
+                      {isDetailMode ? (
                       <div className="rounded-md border p-3">
                         <div className="flex flex-wrap items-center justify-between gap-3">
                           <div>
@@ -1310,9 +1674,10 @@ export function ImageUploader() {
                               {dictionary.imageUploader.detailPageDescription}
                             </p>
                           </div>
-                          <div className="flex flex-wrap gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <Button
                               disabled={
+                                !isDetailMode ||
                                 imageQueueStatus === "queueing" ||
                                 imageQueueStatus === "processing" ||
                                 !canAffordDetailPage
@@ -1364,7 +1729,7 @@ export function ImageUploader() {
                         </div>
 
                         <div className="mt-4 grid gap-3">
-                          {!canAffordDetailPage ? (
+                          {isDetailMode && !canAffordDetailPage ? (
                             <p className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
                               {dictionary.imageUploader.detailPageInsufficientCredits(
                                 detailPageCreditCost,
@@ -1372,7 +1737,117 @@ export function ImageUploader() {
                             </p>
                           ) : null}
 
-                          {detailPageModules.map((module) => {
+                          {imageQueueStatus === "queueing" ? (
+                            <div className="flex items-center gap-2 rounded-md bg-secondary p-3 text-sm">
+                              <Clock3 aria-hidden="true" className="size-4" />
+                              {dictionary.imageUploader.queueing}
+                            </div>
+                          ) : null}
+
+                          {imageQueueStatus === "processing" ? (
+                            <div className="flex items-center gap-2 rounded-md bg-secondary p-3 text-sm">
+                              <Loader2
+                                aria-hidden="true"
+                                className="size-4 animate-spin"
+                              />
+                              {dictionary.imageUploader.generating}
+                            </div>
+                          ) : null}
+
+                          {imageQueueStatus === "success" ? (
+                            <div className="flex items-center gap-2 rounded-md border border-green-600/30 bg-green-50 p-3 text-sm text-green-700">
+                              <CheckCircle2
+                                aria-hidden="true"
+                                className="size-4"
+                              />
+                              {dictionary.imageUploader.generatedImageSaved}
+                            </div>
+                          ) : null}
+
+                          {imageQueueError ? (
+                            <div className="space-y-3 rounded-md border border-destructive/30 bg-destructive/10 p-3">
+                              <p className="text-sm text-destructive">
+                                {imageQueueError}
+                              </p>
+                              {generatedImageJobs.length ? (
+                                <Button
+                                  onClick={() => {
+                                    void refreshGeneratedImages(
+                                      generatedImageJobs.map((job) => job.id),
+                                    ).then(setGeneratedImageJobs);
+                                  }}
+                                  size="sm"
+                                  type="button"
+                                  variant="outline"
+                                >
+                                  <RefreshCw aria-hidden="true" />
+                                  {dictionary.imageUploader.refreshStatus}
+                                </Button>
+                              ) : null}
+                            </div>
+                          ) : null}
+
+                          {isLongDetailMode && generatedImageJobs.length ? (
+                            <div className="grid gap-3">
+                              {generatedImageJobs.map((job) => (
+                                <div
+                                  className="rounded-md bg-secondary p-3"
+                                  key={job.id}
+                                >
+                                  <div className="mb-3 flex items-center justify-between gap-3">
+                                    <div>
+                                      <h5 className="text-sm font-medium">
+                                        {getGeneratedImageLabel(job)}
+                                      </h5>
+                                      <p className="mt-1 text-xs text-muted-foreground">
+                                        {dictionary.imageUploader.spentCredits(
+                                          job.credits_spent,
+                                        )}
+                                      </p>
+                                    </div>
+                                    {job.status === "completed" ? (
+                                      <CheckCircle2
+                                        aria-hidden="true"
+                                        className="size-4 text-green-600"
+                                      />
+                                    ) : job.status === "processing" ||
+                                      job.status === "queued" ? (
+                                      <Loader2
+                                        aria-hidden="true"
+                                        className="size-4 animate-spin"
+                                      />
+                                    ) : job.status === "failed" ? (
+                                      <XCircle
+                                        aria-hidden="true"
+                                        className="size-4 text-destructive"
+                                      />
+                                    ) : null}
+                                  </div>
+
+                                  {job.public_url &&
+                                  job.status === "completed" ? (
+                                    <Image
+                                      alt={dictionary.imageUploader.generatedImageAlt(
+                                        getGeneratedImageLabel(job),
+                                      )}
+                                      className="max-h-80 w-full rounded-md object-contain"
+                                      height={320}
+                                      src={job.public_url}
+                                      width={512}
+                                    />
+                                  ) : null}
+
+                                  {job.error_message ? (
+                                    <p className="mt-3 text-xs leading-5 text-destructive">
+                                      {job.error_message}
+                                    </p>
+                                  ) : null}
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
+
+                          {detailGenerationMode === "modules" ? detailPageModules.map((module) => {
                             const job = generatedImageJobs.find(
                               (currentJob) =>
                                 getDetailModuleId(currentJob) === module.id,
@@ -1438,7 +1913,7 @@ export function ImageUploader() {
                                 ) : null}
                               </div>
                             );
-                          })}
+                          }) : null}
                         </div>
 
                         {detailPageExportStatus === "exporting" ? (
@@ -1457,6 +1932,7 @@ export function ImageUploader() {
                           </p>
                         ) : null}
                       </div>
+                      ) : null}
 
                       {Object.entries(normalizedPrompts)
                         .filter(([, value]) => typeof value === "string")
@@ -1492,6 +1968,7 @@ export function ImageUploader() {
           </div>
         ) : null}
       </div>
+    </div>
     </div>
   );
 }
