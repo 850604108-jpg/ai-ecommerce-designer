@@ -56,6 +56,37 @@ function withPublicUrl(
   };
 }
 
+function getRecognitionId(value: Record<string, unknown>) {
+  return typeof value.product_recognition_id === "string"
+    ? value.product_recognition_id
+    : null;
+}
+
+async function getProductReferenceImageUrl(input: {
+  supabase: SupabaseClient;
+  userId: string;
+  recognitionId: string | null;
+}) {
+  if (!input.recognitionId) {
+    return null;
+  }
+
+  const { data, error } = await input.supabase
+    .from("product_recognitions")
+    .select("image_url")
+    .eq("id", input.recognitionId)
+    .eq("user_id", input.userId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const imageUrl = typeof data?.image_url === "string" ? data.image_url : "";
+
+  return URL.canParse(imageUrl) ? imageUrl : null;
+}
+
 async function getOrCreateGenerationProject(
   supabase: SupabaseClient,
   userId: string,
@@ -104,6 +135,7 @@ export async function queueImageGenerationJob(input: {
   projectId?: string;
   recognitionId?: string | null;
   moduleId?: string | null;
+  styleReferenceImageUrl?: string | null;
   size?: GeneratedImageSize;
 }) {
   const prompt = input.prompt.trim();
@@ -143,6 +175,7 @@ export async function queueImageGenerationJob(input: {
         image_type: input.imageType,
         platform: input.platform || null,
         product_recognition_id: input.recognitionId || null,
+        style_reference_image_url: input.styleReferenceImageUrl || null,
         module_id: input.moduleId || null,
       },
     })
@@ -358,8 +391,11 @@ export async function regenerateImageGenerationJob(input: {
     prompt: data.prompt as string,
     platform: typeof metadata.platform === "string" ? metadata.platform : "",
     recognitionId:
-      typeof metadata.product_recognition_id === "string"
-        ? metadata.product_recognition_id
+      getRecognitionId(metadata),
+    styleReferenceImageUrl:
+      typeof metadata.style_reference_image_url === "string" &&
+      URL.canParse(metadata.style_reference_image_url)
+        ? metadata.style_reference_image_url
         : null,
     moduleId: typeof metadata.module_id === "string" ? metadata.module_id : null,
     size: isGeneratedImageSize(
@@ -456,6 +492,16 @@ export async function processImageGenerationJob(input: {
     const generated = await generateImageWithOpenAI({
       model: currentJob.model,
       prompt: currentJob.prompt,
+      referenceImageUrl: await getProductReferenceImageUrl({
+        recognitionId: getRecognitionId(currentJob.metadata),
+        supabase: input.supabase,
+        userId: input.userId,
+      }),
+      styleReferenceImageUrl:
+        typeof currentJob.metadata?.style_reference_image_url === "string" &&
+        URL.canParse(currentJob.metadata.style_reference_image_url)
+          ? currentJob.metadata.style_reference_image_url
+          : null,
       size,
       quality,
       outputFormat,
@@ -488,6 +534,9 @@ export async function processImageGenerationJob(input: {
           ...generationParams,
           size,
           quality,
+          reference_image_mode: getRecognitionId(currentJob.metadata)
+            ? "product_recognition"
+            : "none",
           output_format: outputFormat,
           usage: generated.usage,
           revised_prompt: generated.revisedPrompt,

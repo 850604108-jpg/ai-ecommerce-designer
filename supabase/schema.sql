@@ -443,6 +443,18 @@ begin
     raise exception 'INVALID_CREDIT_AMOUNT';
   end if;
 
+  if p_image_type = 'main_image' and p_amount <> 2 then
+    raise exception 'INVALID_CREDIT_AMOUNT';
+  end if;
+
+  if p_image_type in ('lifestyle', 'infographic') and p_amount <> 2 then
+    raise exception 'INVALID_CREDIT_AMOUNT';
+  end if;
+
+  if p_image_type in ('detail_page_module', 'detail_page_long') and p_amount <> 3 then
+    raise exception 'INVALID_CREDIT_AMOUNT';
+  end if;
+
   if not exists (
     select 1
     from public.generated_images

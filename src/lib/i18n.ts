@@ -32,7 +32,7 @@ export const dictionaries = {
         detail_page_long: "9:32 detail page",
         infographic: "Infographic",
         lifestyle: "Lifestyle image",
-        main_image: "Main image",
+        main_image: "Secondary image",
       },
       loading: "Loading",
       nextPage: "Next page",
@@ -133,7 +133,7 @@ export const dictionaries = {
     imageUploader: {
       aiImageGeneration: "AI image generation",
       aiImageGenerationDescription:
-        "Main image costs 1 Credit, lifestyle image costs 2 Credits, and infographic costs 2 Credits.",
+        "Secondary listing images cost 2 Credits each.",
       category: "Category",
       chooseFile: "Choose file",
       coreImageInsufficientCredits: (cost: number) =>
@@ -247,7 +247,7 @@ export const dictionaries = {
         detail_page_long: "9:32详情页长图",
         infographic: "信息图",
         lifestyle: "场景图",
-        main_image: "主图",
+        main_image: "副图",
       },
       loading: "加载中",
       nextPage: "下一页",
@@ -343,7 +343,7 @@ export const dictionaries = {
     imageUploader: {
       aiImageGeneration: "AI 图片生成",
       aiImageGenerationDescription:
-        "主图 1 Credit，场景图 2 Credits，信息图按场景图计费 2 Credits。",
+        "副图每张 2 Credits。",
       category: "分类",
       chooseFile: "选择文件",
       coreImageInsufficientCredits: (cost: number) =>

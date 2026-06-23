@@ -12,6 +12,13 @@ export type ProductRecognition = {
   highlights: string[];
 };
 
+export type ProductRecognitionResult = {
+  model: string;
+  rawResponse: unknown;
+  recognition: ProductRecognition;
+  warning?: string;
+};
+
 const productRecognitionSchema = {
   type: "object",
   additionalProperties: false,
@@ -61,7 +68,27 @@ function normalizeRecognition(value: unknown): ProductRecognition {
   };
 }
 
-export async function recognizeProductFromImage(imageUrl: string) {
+export function createFallbackProductRecognition(error: unknown): ProductRecognitionResult {
+  const message =
+    error instanceof Error ? error.message : "Product recognition failed.";
+
+  return {
+    model: `${defaultOpenAIVisionModel}:fallback`,
+    rawResponse: {
+      error: message,
+      fallback: true,
+    },
+    recognition: {
+      product_name: "待确认商品",
+      category: "待确认品类",
+      target_user: "",
+      highlights: [],
+    },
+    warning: `AI 识别暂时不可用，已创建可编辑的待确认信息。原因：${message}`,
+  };
+}
+
+export async function recognizeProductFromImage(imageUrl: string): Promise<ProductRecognitionResult> {
   const model = defaultOpenAIVisionModel;
   const payload = await openAIFetch<OpenAIResponsesPayload>("responses", {
     model,

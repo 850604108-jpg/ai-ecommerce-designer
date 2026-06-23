@@ -56,7 +56,7 @@ export type GeneratedImageHistoryJob = GeneratedImageJob & {
 };
 
 export const generatedImageTypeLabels: Record<GeneratedImageType, string> = {
-  main_image: "主图",
+  main_image: "副图",
   lifestyle: "场景图",
   infographic: "信息图",
   detail_page_module: "详情页模块",
@@ -64,7 +64,7 @@ export const generatedImageTypeLabels: Record<GeneratedImageType, string> = {
 };
 
 export const imageGenerationCreditCosts: Record<GeneratedImageType, number> = {
-  main_image: 1,
+  main_image: 2,
   lifestyle: 2,
   infographic: 2,
   detail_page_module: 3,

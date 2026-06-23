@@ -81,7 +81,22 @@ export async function openAIFetch<TPayload>(
     response = await fetch(url, init);
   }
 
-  const payload = (await response.json()) as TPayload & OpenAIErrorPayload;
+  const responseText = await response.text();
+  let payload: TPayload & OpenAIErrorPayload;
+
+  try {
+    payload = JSON.parse(responseText) as TPayload & OpenAIErrorPayload;
+  } catch {
+    const contentType = response.headers.get("content-type") || "unknown";
+    const preview = responseText
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 120);
+
+    throw new Error(
+      `OpenAI API returned a non-JSON response (${response.status}, ${contentType}) for ${path}. ${preview}`,
+    );
+  }
 
   if (!response.ok) {
     throw new Error(payload.error?.message || "OpenAI API request failed.");

@@ -17,12 +17,47 @@ export type PromptEngineInput = {
 };
 
 export type PromptEngineOptions = {
+  customRequirement?: string;
+  detailEndId?: string;
+  detailGenerationMode?: "modules" | "long";
+  detailStartId?: string;
+  generationMode?: "all" | "main" | "detail";
+  listingImageCount?: number;
+  listingImageRoles?: ListingImageRole[];
   platform?: EcommercePlatform;
+  referenceImageNotes?: string;
+  referenceInfluence?: number;
   language?: "zh-CN" | "en-US";
+  mainImageCount?: number;
+};
+
+export type ListingImageRole =
+  | "benefit"
+  | "feature"
+  | "dimension"
+  | "lifestyle"
+  | "detail"
+  | "comparison"
+  | "how_to_use"
+  | "package";
+
+export type ListingImagePrompt = {
+  id: string;
+  role: ListingImageRole;
+  title: string;
+  prompt: string;
+};
+
+export type MainImagePrompt = {
+  id: string;
+  title: string;
+  prompt: string;
 };
 
 export type PromptEngineOutput = {
   mainImagePrompt: string;
+  mainImagePrompts: MainImagePrompt[];
+  listingImagePrompts: ListingImagePrompt[];
   lifestylePrompt: string;
   infographicPrompt: string;
   detailPagePrompt: string;
@@ -47,6 +82,10 @@ export type PlatformPromptProfile = {
   label: string;
   imageRules: string[];
   visualTone: string[];
+  buyerConcernRules: string[];
+  layoutRules: string[];
+  visualProofRules: string[];
+  negativeRules: string[];
   copyRules: string[];
   detailPageRules: string[];
 };

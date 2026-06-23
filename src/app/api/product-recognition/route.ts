@@ -1,5 +1,8 @@
 import { apiError, apiOk, handleApiError } from "@/lib/api-response";
-import { recognizeProductFromImage } from "@/lib/product-recognition";
+import {
+  createFallbackProductRecognition,
+  recognizeProductFromImage,
+} from "@/lib/product-recognition";
 import { supabaseServer } from "@/lib/supabaseClient";
 
 export async function POST(request: Request) {
@@ -34,8 +37,10 @@ export async function POST(request: Request) {
       });
     }
 
-    const { model, rawResponse, recognition } =
-      await recognizeProductFromImage(recognitionImageUrl);
+    const { model, rawResponse, recognition, warning } =
+      await recognizeProductFromImage(recognitionImageUrl).catch((recognitionError) =>
+        createFallbackProductRecognition(recognitionError),
+      );
 
     const { data, error } = await supabase
       .from("product_recognitions")
@@ -58,7 +63,7 @@ export async function POST(request: Request) {
       return apiError({ error, status: 500 });
     }
 
-    return apiOk({ recognition: data });
+    return apiOk({ recognition: data, recognition_warning: warning || null });
   } catch (error) {
     return handleApiError(error, "Product recognition failed.");
   }

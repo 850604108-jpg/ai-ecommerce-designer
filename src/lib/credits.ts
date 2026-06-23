@@ -49,6 +49,122 @@ function isInsufficientCreditsError(error: { message?: string; code?: string }) 
   );
 }
 
+function isInvalidCreditAmountError(error: { message?: string; code?: string }) {
+  return (
+    error.code === "P0001" &&
+    typeof error.message === "string" &&
+    error.message.includes("INVALID_CREDIT_AMOUNT")
+  );
+}
+
+async function spendImageGenerationCreditsWithServiceRole(input: {
+  userId: string;
+  projectId: string;
+  generatedImageId: string;
+  amount: number;
+  imageType: GeneratedImageType;
+}) {
+  if (input.amount <= 0) {
+    throw new Error("INVALID_CREDIT_AMOUNT");
+  }
+
+  const supabase = supabaseServiceRole();
+  const spendKey = `spend:image-generation:${input.generatedImageId}`;
+  const { data: job, error: jobError } = await supabase
+    .from("generated_images")
+    .select("id")
+    .eq("id", input.generatedImageId)
+    .eq("user_id", input.userId)
+    .eq("project_id", input.projectId)
+    .neq("status", "deleted")
+    .maybeSingle();
+
+  if (jobError) {
+    throw new Error(jobError.message);
+  }
+
+  if (!job) {
+    throw new Error("IMAGE_JOB_NOT_FOUND");
+  }
+
+  const { data: existingSpend, error: existingSpendError } = await supabase
+    .from("credits")
+    .select("balance_after")
+    .eq("idempotency_key", spendKey)
+    .maybeSingle();
+
+  if (existingSpendError) {
+    throw new Error(existingSpendError.message);
+  }
+
+  if (typeof existingSpend?.balance_after === "number") {
+    return existingSpend.balance_after;
+  }
+
+  const { data: balanceRow, error: balanceError } = await supabase
+    .from("user_credit_balances")
+    .select("balance_after")
+    .eq("user_id", input.userId)
+    .maybeSingle();
+
+  if (balanceError) {
+    throw new Error(balanceError.message);
+  }
+
+  const currentBalance = Number(balanceRow?.balance_after || 0);
+
+  if (currentBalance < input.amount) {
+    throw new InsufficientCreditsError();
+  }
+
+  const nextBalance = currentBalance - input.amount;
+  const { data, error } = await supabase
+    .from("credits")
+    .insert({
+      amount: -input.amount,
+      balance_after: nextBalance,
+      generated_image_id: input.generatedImageId,
+      idempotency_key: spendKey,
+      metadata: { image_type: input.imageType },
+      project_id: input.projectId,
+      transaction_type: "spend",
+      user_id: input.userId,
+    })
+    .select("balance_after")
+    .single();
+
+  if (error) {
+    if (error.code === "23505") {
+      const { data: existingAfterConflict, error: conflictReadError } =
+        await supabase
+          .from("credits")
+          .select("balance_after")
+          .eq("idempotency_key", spendKey)
+          .single();
+
+      if (conflictReadError) {
+        throw new Error(conflictReadError.message);
+      }
+
+      return Number(existingAfterConflict.balance_after || nextBalance);
+    }
+
+    throw new Error(error.message);
+  }
+
+  const { error: updateError } = await supabase
+    .from("generated_images")
+    .update({ credits_spent: input.amount })
+    .eq("id", input.generatedImageId)
+    .eq("user_id", input.userId);
+
+  if (updateError) {
+    throw new Error(updateError.message);
+  }
+
+  return Number(data.balance_after || nextBalance);
+}
+
 export async function spendImageGenerationCredits(input: {
   supabase: SupabaseClient;
   userId: string;
@@ -71,6 +187,10 @@ export async function spendImageGenerationCredits(input: {
   if (error) {
     if (isInsufficientCreditsError(error)) {
       throw new InsufficientCreditsError();
+    }
+
+    if (isInvalidCreditAmountError(error)) {
+      return spendImageGenerationCreditsWithServiceRole(input);
     }
 
     throw new Error(error.message);

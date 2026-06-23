@@ -74,6 +74,11 @@ export async function POST(request: Request) {
       typeof body.recognition_id === "string" ? body.recognition_id : null;
     const moduleId =
       typeof body.module_id === "string" ? body.module_id : null;
+    const styleReferenceImageUrl =
+      typeof body.style_reference_image_url === "string" &&
+      URL.canParse(body.style_reference_image_url)
+        ? body.style_reference_image_url
+        : null;
     const size = isGeneratedImageSize(body.size) ? body.size : undefined;
 
     if (!isGeneratedImageType(imageType)) {
@@ -93,6 +98,7 @@ export async function POST(request: Request) {
       platform,
       recognitionId,
       moduleId,
+      styleReferenceImageUrl,
       size,
     });
     const creditBalance = await getUserCreditBalance(supabase, user.id);

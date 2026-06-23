@@ -24,10 +24,13 @@ import { Button } from "@/components/ui/button";
 import {
   ecommercePlatforms,
   type EcommercePlatform,
+  type ListingImageRole,
   type PromptEngineOutput,
 } from "@/lib/prompt-engine";
 import {
   imageGenerationCreditCosts,
+  isGeneratedImageSize,
+  isGeneratedImageType,
   type GeneratedImageSize,
   type GeneratedImageJob,
   type GeneratedImageType,
@@ -47,6 +50,7 @@ const promptGenerationCreditCost = 3;
 type UploadResult = {
   imageUrl: string;
   recognition?: ProductRecognitionResult;
+  recognitionWarning?: string | null;
 };
 
 type UploadState = "idle" | "ready" | "uploading" | "success" | "error";
@@ -66,7 +70,9 @@ const emptyPromptOutput: PromptEngineOutput = {
   detailPagePrompt: "",
   infographicPrompt: "",
   lifestylePrompt: "",
+  listingImagePrompts: [],
   mainImagePrompt: "",
+  mainImagePrompts: [],
 };
 
 type RecognitionState = "idle" | "recognizing" | "success" | "error";
@@ -78,8 +84,34 @@ type ImageQueueState = "idle" | "queueing" | "processing" | "success" | "error";
 type ExportState = "idle" | "exporting" | "error";
 type GenerationMode = "main" | "detail";
 type DetailGenerationMode = "modules" | "long";
+type ReferenceStyleImage = {
+  fileName: string;
+  imageUrl: string;
+};
 
-const mainImageCountOptions = [1, 2, 3, 4, 5, 6, 7, 8] as const;
+const listingImageCountOptions = [1, 2, 3, 4, 5, 6, 7] as const;
+const listingImageRoleOptions: Array<{
+  label: string;
+  value: ListingImageRole;
+}> = [
+  { label: "核心卖点/利益图", value: "benefit" },
+  { label: "功能拆解/结构证明图", value: "feature" },
+  { label: "尺寸/规格/适配图", value: "dimension" },
+  { label: "场景使用图", value: "lifestyle" },
+  { label: "细节特写/局部放大图", value: "detail" },
+  { label: "对比图", value: "comparison" },
+  { label: "使用步骤/流程图", value: "how_to_use" },
+  { label: "包装/全家福图", value: "package" },
+];
+const defaultListingImageRoles: ListingImageRole[] = [
+  "benefit",
+  "feature",
+  "dimension",
+  "lifestyle",
+  "detail",
+  "comparison",
+  "how_to_use",
+];
 const detailModuleIds = [
   "AD-01",
   "AD-02",
@@ -109,6 +141,13 @@ const platformLabels: Record<EcommercePlatform, string> = {
   kuaishou: "快手电商",
   wechat: "微信小店",
 };
+
+function isEcommercePlatformValue(value: unknown): value is EcommercePlatform {
+  return (
+    typeof value === "string" &&
+    ecommercePlatforms.includes(value as EcommercePlatform)
+  );
+}
 
 function isAllowedImage(file: File) {
   const extension = file.name.split(".").pop()?.toLowerCase();
@@ -222,6 +261,7 @@ async function recognizeProductFromPayload(input: {
     .catch(() => ({ error: "Product recognition returned an invalid response." }))) as {
     error?: string;
     recognition?: ProductRecognitionResult;
+    recognition_warning?: string | null;
   };
 
   if (!response.ok || !payload.recognition) {
@@ -229,10 +269,19 @@ async function recognizeProductFromPayload(input: {
   }
 
   return {
-    ...payload.recognition,
-    highlights: Array.isArray(payload.recognition.highlights)
-      ? payload.recognition.highlights
-      : [],
+    recognition: {
+      ...payload.recognition,
+      highlights: Array.isArray(payload.recognition.highlights)
+        ? payload.recognition.highlights
+        : [],
+    },
+    warning: payload.recognition_warning || null,
+  };
+}
+
+async function parseJsonResponse<T>(response: Response, fallbackError: string) {
+  return (await response.json().catch(() => ({ error: fallbackError }))) as T & {
+    error?: string;
   };
 }
 
@@ -269,6 +318,64 @@ function normalizePromptOutput(value: unknown): PromptEngineOutput {
         })
         .filter((module) => module.imagePrompt.trim())
     : [];
+  const mainImagePrompts = Array.isArray(record.mainImagePrompts)
+    ? record.mainImagePrompts
+        .map((item, index) => {
+          const promptRecord =
+            item && typeof item === "object"
+              ? (item as Record<string, unknown>)
+              : {};
+          const id =
+            typeof promptRecord.id === "string"
+              ? promptRecord.id
+              : `AS-${String(index + 1).padStart(2, "0")}`;
+
+          return {
+            id,
+            prompt:
+              typeof promptRecord.prompt === "string"
+                ? promptRecord.prompt
+                : "",
+            title:
+              typeof promptRecord.title === "string" ? promptRecord.title : id,
+          };
+        })
+        .filter((prompt) => prompt.prompt.trim())
+    : [];
+  const listingImagePrompts = Array.isArray(record.listingImagePrompts)
+    ? record.listingImagePrompts
+        .map((item, index) => {
+          const promptRecord =
+            item && typeof item === "object"
+              ? (item as Record<string, unknown>)
+              : {};
+          const fallbackRole =
+            defaultListingImageRoles[index] || defaultListingImageRoles[1];
+          const id =
+            typeof promptRecord.id === "string"
+              ? promptRecord.id
+              : `AS-${String(index + 1).padStart(2, "0")}`;
+          const role =
+            typeof promptRecord.role === "string" &&
+            defaultListingImageRoles
+              .concat(listingImageRoleOptions.map((option) => option.value))
+              .includes(promptRecord.role as ListingImageRole)
+              ? (promptRecord.role as ListingImageRole)
+              : fallbackRole;
+
+          return {
+            id,
+            prompt:
+              typeof promptRecord.prompt === "string"
+                ? promptRecord.prompt
+                : "",
+            role,
+            title:
+              typeof promptRecord.title === "string" ? promptRecord.title : id,
+          };
+        })
+        .filter((prompt) => prompt.prompt.trim())
+    : [];
 
   return {
     detailPageModules,
@@ -280,14 +387,28 @@ function normalizePromptOutput(value: unknown): PromptEngineOutput {
         : "",
     lifestylePrompt:
       typeof record.lifestylePrompt === "string" ? record.lifestylePrompt : "",
+    listingImagePrompts,
     mainImagePrompt:
       typeof record.mainImagePrompt === "string" ? record.mainImagePrompt : "",
+    mainImagePrompts,
   };
 }
 
 async function generatePrompts(
   recognition: ProductRecognitionResult,
   platform: EcommercePlatform,
+  options: {
+    customRequirement: string;
+    detailEndId: string;
+    detailGenerationMode: DetailGenerationMode;
+    detailStartId: string;
+    generationMode: GenerationMode;
+    listingImageCount: number;
+    listingImageRoles: ListingImageRole[];
+    mainImageCount: number;
+    referenceImageNotes: string;
+    referenceInfluence: number;
+  },
 ) {
   const response = await fetch("/api/prompt-engine", {
     method: "POST",
@@ -297,15 +418,22 @@ async function generatePrompts(
       product_name: recognition.product_name,
       category: recognition.category,
       highlights: recognition.highlights,
+      custom_requirement: options.customRequirement,
+      detail_end_id: options.detailEndId,
+      detail_generation_mode: options.detailGenerationMode,
+      detail_start_id: options.detailStartId,
+      generation_mode: options.generationMode,
+      listing_image_count: options.listingImageCount,
+      listing_image_roles: options.listingImageRoles,
+      main_image_count: options.mainImageCount,
+      reference_image_notes: options.referenceImageNotes,
+      reference_influence: options.referenceInfluence,
     }),
   });
-  const payload = (await response.json().catch(() => ({
-    error: "Prompt generation returned an invalid response.",
-  }))) as {
+  const payload = await parseJsonResponse<{
     credit_balance?: number | null;
-    error?: string;
     prompts?: unknown;
-  };
+  }>(response, "Prompt generation returned an invalid response.");
 
   if (!response.ok || !payload.prompts) {
     throw new Error(payload.error || "Prompt generation failed.");
@@ -324,6 +452,7 @@ async function queueGeneratedImage(input: {
   platform: EcommercePlatform;
   recognitionId?: string;
   moduleId?: string;
+  styleReferenceImageUrl?: string;
   size?: GeneratedImageSize;
 }) {
   const response = await fetch("/api/image-generation", {
@@ -335,14 +464,14 @@ async function queueGeneratedImage(input: {
       platform: input.platform,
       recognition_id: input.recognitionId,
       module_id: input.moduleId,
+      style_reference_image_url: input.styleReferenceImageUrl,
       size: input.size,
     }),
   });
-  const payload = (await response.json()) as {
+  const payload = await parseJsonResponse<{
     credit_balance?: number | null;
-    error?: string;
     job?: GeneratedImageJob;
-  };
+  }>(response, "Image generation queue returned an invalid response.");
 
   if (!response.ok || !payload.job) {
     throw new Error(payload.error || "Image generation queue failed.");
@@ -359,11 +488,10 @@ async function processGeneratedImage(jobId: string) {
   const response = await fetch(`/api/image-generation/${jobId}/process`, {
     method: "POST",
   });
-  const payload = (await response.json()) as {
+  const payload = await parseJsonResponse<{
     credit_balance?: number | null;
-    error?: string;
     job?: GeneratedImageJob;
-  };
+  }>(response, "Image generation processing returned an invalid response.");
 
   if (!response.ok || !payload.job) {
     throw new Error(payload.error || "Image generation failed.");
@@ -378,10 +506,9 @@ async function processGeneratedImage(jobId: string) {
 
 async function loadCreditBalance() {
   const response = await fetch("/api/credits");
-  const payload = (await response.json()) as {
+  const payload = await parseJsonResponse<{
     credit_balance?: number;
-    error?: string;
-  };
+  }>(response, "Failed to load credit balance.");
 
   if (!response.ok || typeof payload.credit_balance !== "number") {
     throw new Error(payload.error || "Failed to load credit balance.");
@@ -396,16 +523,15 @@ async function refreshGeneratedImages(jobIds: string[]) {
   }
 
   const response = await fetch(`/api/image-generation?ids=${jobIds.join(",")}`);
-  const payload = (await response.json()) as {
-    error?: string;
+  const payload = await parseJsonResponse<{
     jobs?: GeneratedImageJob[];
-  };
+  }>(response, "Failed to refresh image jobs.");
 
   if (!response.ok || !payload.jobs) {
     throw new Error(payload.error || "Failed to refresh image jobs.");
   }
 
-  return payload.jobs;
+  return sortGeneratedImageJobs(payload.jobs);
 }
 
 function getDetailModuleId(job: GeneratedImageJob) {
@@ -429,6 +555,77 @@ function getModuleIdIndex(moduleId: string) {
   return detailModuleIds.findIndex((id) => id === moduleId);
 }
 
+function getJobModuleId(job: GeneratedImageJob) {
+  const moduleId = job.metadata?.module_id;
+
+  return typeof moduleId === "string" ? moduleId : "";
+}
+
+function getModuleSortValue(job: GeneratedImageJob) {
+  const moduleId = getJobModuleId(job);
+  const match = moduleId.match(/^(AS|AD)-(\d{2})$/);
+
+  if (match) {
+    return `${match[1]}-${match[2]}`;
+  }
+
+  return moduleId || job.created_at || job.id;
+}
+
+function sortGeneratedImageJobs(jobs: GeneratedImageJob[]) {
+  return [...jobs].sort((a, b) => {
+    const aSort = getModuleSortValue(a);
+    const bSort = getModuleSortValue(b);
+
+    if (aSort !== bSort) {
+      return aSort.localeCompare(bSort);
+    }
+
+    return a.created_at.localeCompare(b.created_at);
+  });
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+async function runWithConcurrency<TItem, TResult>(
+  items: TItem[],
+  limit: number,
+  worker: (item: TItem, index: number) => Promise<TResult>,
+) {
+  const results: Array<PromiseSettledResult<TResult> | undefined> = Array.from({
+    length: items.length,
+  });
+  let nextIndex = 0;
+  const workerCount = Math.min(Math.max(limit, 1), items.length);
+
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (nextIndex < items.length) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+
+        try {
+          results[currentIndex] = {
+            status: "fulfilled",
+            value: await worker(items[currentIndex], currentIndex),
+          };
+        } catch (error) {
+          results[currentIndex] = {
+            reason: error,
+            status: "rejected",
+          };
+        }
+      }
+    }),
+  );
+
+  return results as PromiseSettledResult<TResult>[];
+}
+
 function getSelectedDetailModules(
   modules: PromptEngineOutput["detailPageModules"],
   startId: string,
@@ -443,13 +640,84 @@ function getSelectedDetailModules(
   return modules.filter((module) => selectedIds.has(module.id));
 }
 
+function getVisiblePromptEntries(input: {
+  detailGenerationMode: DetailGenerationMode;
+  generationMode: GenerationMode;
+  prompts: PromptEngineOutput;
+}) {
+  if (input.generationMode === "main") {
+    const prompts = input.prompts.listingImagePrompts.length
+      ? input.prompts.listingImagePrompts
+      : input.prompts.mainImagePrompts.map((prompt) => ({
+          ...prompt,
+          role: "benefit" as ListingImageRole,
+        }));
+
+    return prompts.map((prompt) => ({
+      id: prompt.id,
+      prompt: prompt.prompt,
+      title: prompt.title,
+    }));
+  }
+
+  if (input.detailGenerationMode === "long") {
+    return input.prompts.detailPagePrompt.trim()
+      ? [
+          {
+            id: "9:32",
+            prompt: input.prompts.detailPagePrompt,
+            title: "详情页超长图",
+          },
+        ]
+      : [];
+  }
+
+  return input.prompts.detailPageModules.map((module) => ({
+    id: module.id,
+    prompt: module.imagePrompt,
+    title: module.title,
+  }));
+}
+
 function buildMainImagePromptVariant(prompt: string, index: number, total: number) {
   return [
     prompt,
-    `本次生成主图 AM-${String(index + 1).padStart(2, "0")} / ${total}。`,
-    "保持 1:1 方图，商品完整清晰，白底或浅色干净商业背景，适合作为电商主图候选。",
-    "同批多张主图之间只变化角度、光线、摆放层次或轻量道具，不改变商品结构、颜色、包装文字和真实比例。",
+    `本次生成副图 AS-${String(index + 1).padStart(2, "0")} / ${total}。`,
+    "保持 1:1 方图，商品完整清晰，围绕一个副图卖点做场景、信息或证明表达。",
+    "同批多张副图之间只变化表达目的、版式、场景或证明方式，不改变商品结构、颜色、包装文字和真实比例。",
   ].join("\n\n");
+}
+
+function getMainImagePromptVariants(
+  promptOutput: PromptEngineOutput,
+  count: number,
+) {
+  const prompts = promptOutput.listingImagePrompts.length
+    ? promptOutput.listingImagePrompts
+    : promptOutput.mainImagePrompts.length
+      ? promptOutput.mainImagePrompts
+      : Array.from({ length: count }, (_, index) => ({
+          id: `AS-${String(index + 1).padStart(2, "0")}`,
+          prompt: buildMainImagePromptVariant(
+            promptOutput.mainImagePrompt,
+            index,
+            count,
+          ),
+          title: `AS-${String(index + 1).padStart(2, "0")}`,
+        }));
+
+  return prompts.slice(0, count);
+}
+
+function getListingPromptForJob(
+  promptOutput: PromptEngineOutput,
+  job: GeneratedImageJob,
+) {
+  const moduleId = getJobModuleId(job);
+
+  return promptOutput.listingImagePrompts.find(
+    (prompt) => prompt.id === moduleId,
+  );
 }
 
 function buildDetailImagePromptVariant(input: {
@@ -579,7 +847,18 @@ export function ImageUploader({
     useState<GenerationMode>("main");
   const [detailGenerationMode, setDetailGenerationMode] =
     useState<DetailGenerationMode>("modules");
-  const [mainImageCount, setMainImageCount] = useState<number>(1);
+  const [listingImageCount, setListingImageCount] = useState<number>(5);
+  const [listingImageRoles, setListingImageRoles] = useState<ListingImageRole[]>(
+    defaultListingImageRoles.slice(0, 5),
+  );
+  const [referenceImageNotes, setReferenceImageNotes] = useState("");
+  const [referenceStyleImage, setReferenceStyleImage] =
+    useState<ReferenceStyleImage | null>(null);
+  const [referenceStyleUploadStatus, setReferenceStyleUploadStatus] =
+    useState<UploadState>("idle");
+  const [referenceStyleError, setReferenceStyleError] = useState("");
+  const [referenceInfluence, setReferenceInfluence] = useState(30);
+  const [customRequirement, setCustomRequirement] = useState("");
   const [detailStartId, setDetailStartId] = useState<string>("AD-01");
   const [detailEndId, setDetailEndId] = useState<string>("AD-06");
   const [detailAspect, setDetailAspect] =
@@ -597,6 +876,8 @@ export function ImageUploader({
   const [creditBalance, setCreditBalance] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const referenceStyleInputId = useId();
+  const referenceStyleInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     void loadCreditBalance()
@@ -695,11 +976,15 @@ export function ImageUploader({
     try {
       const imageDataUrl =
         file.size <= 3 * 1024 * 1024 ? await fileToDataUrl(file) : undefined;
-      const recognition = await recognizeProductFromPayload({
+      const recognitionResult = await recognizeProductFromPayload({
         imageDataUrl,
         imageUrl: uploadResult.imageUrl,
       });
-      setResult({ ...uploadResult, recognition });
+      setResult({
+        ...uploadResult,
+        recognition: recognitionResult.recognition,
+        recognitionWarning: recognitionResult.warning,
+      });
       setRecognitionStatus("success");
     } catch (recognitionError) {
       setRecognitionStatus("error");
@@ -711,6 +996,216 @@ export function ImageUploader({
     }
   }
 
+  function updateRecognitionField(
+    field: "product_name" | "category" | "target_user",
+    value: string,
+  ) {
+    setResult((currentResult) => {
+      if (!currentResult?.recognition) {
+        return currentResult;
+      }
+
+      return {
+        ...currentResult,
+        recognition: {
+          ...currentResult.recognition,
+          [field]: value,
+        },
+      };
+    });
+    setPrompts(null);
+    setPromptStatus("idle");
+    setPromptError("");
+    setGeneratedImageJobs([]);
+    setImageQueueStatus("idle");
+    setImageQueueError("");
+  }
+
+  function updateRecognitionHighlight(index: number, value: string) {
+    setResult((currentResult) => {
+      if (!currentResult?.recognition) {
+        return currentResult;
+      }
+
+      const highlights = [...currentResult.recognition.highlights];
+      highlights[index] = value;
+
+      return {
+        ...currentResult,
+        recognition: {
+          ...currentResult.recognition,
+          highlights,
+        },
+      };
+    });
+    setPrompts(null);
+    setPromptStatus("idle");
+    setPromptError("");
+    setGeneratedImageJobs([]);
+    setImageQueueStatus("idle");
+    setImageQueueError("");
+  }
+
+  function addRecognitionHighlight() {
+    setResult((currentResult) => {
+      if (!currentResult?.recognition) {
+        return currentResult;
+      }
+
+      return {
+        ...currentResult,
+        recognition: {
+          ...currentResult.recognition,
+          highlights: [...currentResult.recognition.highlights, ""],
+        },
+      };
+    });
+    setPrompts(null);
+    setPromptStatus("idle");
+    setPromptError("");
+    setGeneratedImageJobs([]);
+    setImageQueueStatus("idle");
+    setImageQueueError("");
+  }
+
+  function removeRecognitionHighlight(index: number) {
+    setResult((currentResult) => {
+      if (!currentResult?.recognition) {
+        return currentResult;
+      }
+
+      return {
+        ...currentResult,
+        recognition: {
+          ...currentResult.recognition,
+          highlights: currentResult.recognition.highlights.filter(
+            (_highlight, highlightIndex) => highlightIndex !== index,
+          ),
+        },
+      };
+    });
+    setPrompts(null);
+    setPromptStatus("idle");
+    setPromptError("");
+    setGeneratedImageJobs([]);
+    setImageQueueStatus("idle");
+    setImageQueueError("");
+  }
+
+  function handleListingImageCountChange(count: number) {
+    setListingImageCount(count);
+    setListingImageRoles(
+      Array.from(
+        { length: count },
+        (_item, index) =>
+          listingImageRoles[index] ||
+          defaultListingImageRoles[index] ||
+          "benefit",
+      ),
+    );
+    setPrompts(null);
+    setPromptStatus("idle");
+    setPromptError("");
+    setGeneratedImageJobs([]);
+    setImageQueueStatus("idle");
+    setImageQueueError("");
+  }
+
+  function updateListingImageRole(index: number, role: ListingImageRole) {
+    setListingImageRoles((currentRoles) => {
+      const roles = [...currentRoles];
+      roles[index] = role;
+      return roles;
+    });
+    setPrompts(null);
+    setPromptStatus("idle");
+    setPromptError("");
+    setGeneratedImageJobs([]);
+    setImageQueueStatus("idle");
+    setImageQueueError("");
+  }
+
+  function updateCustomRequirement(value: string) {
+    setCustomRequirement(value);
+    setGeneratedImageJobs([]);
+    setImageQueueStatus("idle");
+    setImageQueueError("");
+  }
+
+  async function handleReferenceStyleUpload(nextFile?: File) {
+    setReferenceStyleError("");
+
+    if (!nextFile) {
+      return;
+    }
+
+    if (!isAllowedImage(nextFile)) {
+      setReferenceStyleUploadStatus("error");
+      setReferenceStyleError(dictionary.imageUploader.invalidImage);
+      return;
+    }
+
+    if (!isAuthenticated) {
+      setReferenceStyleUploadStatus("error");
+      setReferenceStyleError(dictionary.imageUploader.loginRequiredDescription);
+      return;
+    }
+
+    setReferenceStyleUploadStatus("uploading");
+
+    try {
+      const uploadResult = await uploadToSupabaseStorage(nextFile, () => {});
+      const notes = `参考风格图已上传：${nextFile.name}；图片地址：${uploadResult.imageUrl}。只参考构图、色调、字体标注、版式节奏和背景氛围。`;
+
+      setReferenceStyleImage({
+        fileName: nextFile.name,
+        imageUrl: uploadResult.imageUrl,
+      });
+      setReferenceImageNotes(notes);
+      setReferenceStyleUploadStatus("success");
+      setPrompts(null);
+      setPromptStatus("idle");
+      setPromptError("");
+      setGeneratedImageJobs([]);
+      setImageQueueStatus("idle");
+      setImageQueueError("");
+    } catch (uploadError) {
+      setReferenceStyleUploadStatus("error");
+      setReferenceStyleError(
+        uploadError instanceof Error
+          ? uploadError.message
+          : dictionary.imageUploader.uploadFailed,
+      );
+    }
+  }
+
+  function removeReferenceStyleImage() {
+    setReferenceStyleImage(null);
+    setReferenceImageNotes("");
+    setReferenceStyleUploadStatus("idle");
+    setReferenceStyleError("");
+    setPrompts(null);
+    setPromptStatus("idle");
+    setPromptError("");
+    setGeneratedImageJobs([]);
+    setImageQueueStatus("idle");
+    setImageQueueError("");
+
+    if (referenceStyleInputRef.current) {
+      referenceStyleInputRef.current.value = "";
+    }
+  }
+
+  function updateReferenceInfluence(value: number) {
+    setReferenceInfluence(value);
+    setPrompts(null);
+    setPromptStatus("idle");
+    setPromptError("");
+    setGeneratedImageJobs([]);
+    setImageQueueStatus("idle");
+    setImageQueueError("");
+  }
+
   async function handlePromptGeneration(
     recognition: ProductRecognitionResult,
     platform: EcommercePlatform,
@@ -720,7 +1215,18 @@ export function ImageUploader({
     setPrompts(null);
 
     try {
-      const result = await generatePrompts(recognition, platform);
+      const result = await generatePrompts(recognition, platform, {
+        customRequirement,
+        detailEndId,
+        detailGenerationMode,
+        detailStartId,
+        generationMode,
+        listingImageCount,
+        listingImageRoles,
+        mainImageCount: listingImageCount,
+        referenceImageNotes,
+        referenceInfluence,
+      });
       setPrompts(result.prompts);
       if (result.creditBalance !== null) {
         setCreditBalance(result.creditBalance);
@@ -755,13 +1261,144 @@ export function ImageUploader({
       );
 
       if (existingIndex === -1) {
-        return [nextJob, ...currentJobs];
+        return sortGeneratedImageJobs([...currentJobs, nextJob]);
       }
 
       const nextJobs = [...currentJobs];
       nextJobs[existingIndex] = nextJob;
-      return nextJobs;
+      return sortGeneratedImageJobs(nextJobs);
     });
+  }
+
+  function upsertListingImageJob(nextJob: GeneratedImageJob) {
+    setGeneratedImageJobs((currentJobs) => {
+      const nextModuleId = getJobModuleId(nextJob);
+      const existingIndex = currentJobs.findIndex(
+        (currentJob) => getJobModuleId(currentJob) === nextModuleId,
+      );
+
+      if (!nextModuleId || existingIndex === -1) {
+        return sortGeneratedImageJobs([...currentJobs, nextJob]);
+      }
+
+      const nextJobs = [...currentJobs];
+      nextJobs[existingIndex] = nextJob;
+      return sortGeneratedImageJobs(nextJobs);
+    });
+  }
+
+  async function processQueuedImageJobWithRetry(job: GeneratedImageJob) {
+    let activeJob = job;
+    upsertGeneratedImageJob({ ...activeJob, status: "processing" });
+
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        const processed = await processGeneratedImage(activeJob.id);
+
+        if (processed.creditBalance !== null) {
+          setCreditBalance(processed.creditBalance);
+        }
+
+        upsertGeneratedImageJob(processed.job);
+        return processed.job;
+      } catch (processError) {
+        const refreshedJobs = await refreshGeneratedImages([activeJob.id]).catch(
+          () => [],
+        );
+        const refreshedJob = refreshedJobs[0];
+
+        if (refreshedJob) {
+          upsertGeneratedImageJob(refreshedJob);
+        }
+
+        if (attempt < 2) {
+          const imageType = activeJob.metadata?.image_type;
+          const generationParams = activeJob.generation_params || {};
+          const moduleId = getJobModuleId(activeJob);
+          const recognitionId = activeJob.metadata?.product_recognition_id;
+          const replacement = await queueGeneratedImage({
+            imageType: isGeneratedImageType(imageType)
+              ? imageType
+              : "main_image",
+            moduleId,
+            platform: isEcommercePlatformValue(activeJob.metadata?.platform)
+              ? activeJob.metadata.platform
+              : selectedPlatform,
+            prompt: activeJob.prompt,
+            recognitionId:
+              typeof recognitionId === "string"
+                ? recognitionId
+                : result?.recognition?.id,
+            styleReferenceImageUrl:
+              typeof activeJob.metadata?.style_reference_image_url === "string"
+                ? activeJob.metadata.style_reference_image_url
+                : referenceStyleImage?.imageUrl,
+            size: isGeneratedImageSize(generationParams.size)
+              ? generationParams.size
+              : "1024x1024",
+          });
+
+          if (replacement.creditBalance !== null) {
+            setCreditBalance(replacement.creditBalance);
+          }
+
+          activeJob = replacement.job;
+          upsertGeneratedImageJob({ ...activeJob, status: "processing" });
+          await sleep(1200);
+          continue;
+        }
+
+        throw processError;
+      }
+    }
+
+    return activeJob;
+  }
+
+  async function handleRegenerateListingImage(job: GeneratedImageJob) {
+    if (!prompts || imageQueueStatus === "queueing") {
+      return;
+    }
+
+    const prompt = getListingPromptForJob(normalizePromptOutput(prompts), job);
+
+    if (!prompt) {
+      setImageQueueError("未找到该图片对应的提示词，请先重新生成提示词。");
+      return;
+    }
+
+    setImageQueueStatus("processing");
+    setImageQueueError("");
+
+    try {
+      const queued = await queueGeneratedImage({
+        imageType: "main_image",
+        moduleId: prompt.id,
+        platform: selectedPlatform,
+        prompt: prompt.prompt,
+        recognitionId: result?.recognition?.id,
+        styleReferenceImageUrl: referenceStyleImage?.imageUrl,
+        size: "1024x1024",
+      });
+
+      if (queued.creditBalance !== null) {
+        setCreditBalance(queued.creditBalance);
+      }
+
+      upsertListingImageJob({ ...queued.job, status: "processing" });
+      const processedJob = await processQueuedImageJobWithRetry(queued.job);
+      upsertListingImageJob(processedJob);
+      setImageQueueStatus("success");
+    } catch (generationError) {
+      setImageQueueStatus("error");
+      setImageQueueError(
+        generationError instanceof Error
+          ? generationError.message
+          : dictionary.imageUploader.imageGenerationFailed,
+      );
+
+      setCreditBalance(await loadCreditBalance().catch(() => creditBalance));
+    }
   }
 
   async function handleGenerateMainImages() {
@@ -776,18 +1413,20 @@ export function ImageUploader({
     let queuedJobs: GeneratedImageJob[] = [];
 
     try {
+      const mainImagePrompts = getMainImagePromptVariants(
+        normalizePromptOutput(prompts),
+        listingImageCount,
+      );
       const queuedResults = await Promise.all(
-        Array.from({ length: mainImageCount }, (_, index) =>
+        mainImagePrompts.map((mainPrompt, index) =>
           queueGeneratedImage({
             imageType: "main_image",
-            prompt: buildMainImagePromptVariant(
-              prompts.mainImagePrompt,
-              index,
-              mainImageCount,
-            ),
+            prompt: mainPrompt.prompt,
             platform: selectedPlatform,
             recognitionId: result?.recognition?.id,
-            moduleId: `AM-${String(index + 1).padStart(2, "0")}`,
+            moduleId:
+              mainPrompt.id || `AS-${String(index + 1).padStart(2, "0")}`,
+            styleReferenceImageUrl: referenceStyleImage?.imageUrl,
             size: "1024x1024",
           }),
         ),
@@ -801,23 +1440,26 @@ export function ImageUploader({
         setCreditBalance(latestBalance);
       }
 
-      setGeneratedImageJobs(queuedJobs);
+      setGeneratedImageJobs(sortGeneratedImageJobs(queuedJobs));
       setImageQueueStatus("processing");
 
-      await Promise.all(
-        queuedJobs.map(async (job) => {
-          upsertGeneratedImageJob({ ...job, status: "processing" });
-          const processed = await processGeneratedImage(job.id);
-
-          if (processed.creditBalance !== null) {
-            setCreditBalance(processed.creditBalance);
-          }
-
-          upsertGeneratedImageJob(processed.job);
-        }),
+      const processedResults = await runWithConcurrency(
+        queuedJobs,
+        2,
+        async (job) => processQueuedImageJobWithRetry(job),
       );
+      const failedCount = processedResults.filter(
+        (result) => result.status === "rejected",
+      ).length;
 
-      setImageQueueStatus("success");
+      if (failedCount) {
+        setImageQueueStatus("error");
+        setImageQueueError(
+          `${failedCount} 张副图生成失败，已保留在对应 AS 位置，可点击“重新生成此图”单独重试。`,
+        );
+      } else {
+        setImageQueueStatus("success");
+      }
     } catch (generationError) {
       setImageQueueStatus("error");
       setImageQueueError(
@@ -829,7 +1471,7 @@ export function ImageUploader({
       try {
         const ids = queuedJobs.map((job) => job.id);
         const refreshedJobs = await refreshGeneratedImages(ids);
-        setGeneratedImageJobs(refreshedJobs);
+        setGeneratedImageJobs(sortGeneratedImageJobs(refreshedJobs));
         setCreditBalance(await loadCreditBalance());
       } catch {
         // Keep the current local queue when refresh fails.
@@ -873,6 +1515,7 @@ export function ImageUploader({
               platform: selectedPlatform,
               recognitionId: result?.recognition?.id,
               moduleId: "AD-LONG",
+              styleReferenceImageUrl: referenceStyleImage?.imageUrl,
               size: "1024x1536",
             }),
           ]
@@ -887,6 +1530,7 @@ export function ImageUploader({
                 platform: selectedPlatform,
                 recognitionId: result?.recognition?.id,
                 moduleId: module.id,
+                styleReferenceImageUrl: referenceStyleImage?.imageUrl,
                 size: aspectOption.size,
               }),
             ),
@@ -996,6 +1640,49 @@ export function ImageUploader({
     }
   }
 
+  function updatePromptEntryPrompt(entryId: string, nextPrompt: string) {
+    setPrompts((currentPrompts) => {
+      if (!currentPrompts) {
+        return currentPrompts;
+      }
+
+      const normalized = normalizePromptOutput(currentPrompts);
+
+      if (generationMode === "main") {
+        return {
+          ...normalized,
+          listingImagePrompts: normalized.listingImagePrompts.map((prompt) =>
+            prompt.id === entryId ? { ...prompt, prompt: nextPrompt } : prompt,
+          ),
+          mainImagePrompts: normalized.mainImagePrompts.map((prompt) =>
+            prompt.id === entryId ? { ...prompt, prompt: nextPrompt } : prompt,
+          ),
+          mainImagePrompt:
+            normalized.listingImagePrompts[0]?.id === entryId
+              ? nextPrompt
+              : normalized.mainImagePrompt,
+        };
+      }
+
+      if (detailGenerationMode === "long" && entryId === "9:32") {
+        return {
+          ...normalized,
+          detailPagePrompt: nextPrompt,
+        };
+      }
+
+      return {
+        ...normalized,
+        detailPageModules: normalized.detailPageModules.map((module) =>
+          module.id === entryId ? { ...module, imagePrompt: nextPrompt } : module,
+        ),
+      };
+    });
+    setGeneratedImageJobs([]);
+    setImageQueueStatus("idle");
+    setImageQueueError("");
+  }
+
   function getGeneratedImageLabel(job: GeneratedImageJob) {
     const imageType = job.metadata?.image_type;
 
@@ -1009,6 +1696,11 @@ export function ImageUploader({
   const normalizedPrompts = prompts
     ? normalizePromptOutput(prompts)
     : emptyPromptOutput;
+  const visiblePromptEntries = getVisiblePromptEntries({
+    detailGenerationMode,
+    generationMode,
+    prompts: normalizedPrompts,
+  });
   const detailPageModules = getSelectedDetailModules(
     normalizedPrompts.detailPageModules,
     detailStartId,
@@ -1019,7 +1711,7 @@ export function ImageUploader({
     Boolean(detailPageModules.length) &&
     detailPageJobs.length === detailPageModules.length;
   const mainImageCreditCost =
-    mainImageCount * imageGenerationCreditCosts.main_image;
+    listingImageCount * imageGenerationCreditCosts.main_image;
   const detailPageCreditCost =
     detailGenerationMode === "long"
       ? imageGenerationCreditCosts.detail_page_long
@@ -1053,7 +1745,7 @@ export function ImageUploader({
               type="button"
               variant={isMainMode ? "default" : "outline"}
             >
-              主图
+              副图
             </Button>
             <Button
               className={cn(
@@ -1073,26 +1765,133 @@ export function ImageUploader({
           <div className="rounded-md border p-3 lg:col-span-2">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h3 className="text-sm font-medium">主图生成</h3>
+                <h3 className="text-sm font-medium">Listing 图片套组</h3>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  主图固定为 1:1 方图，每张消耗 1 Credit。
+                  AS-01 至 AS-07 均为副图，可分别选择角色；每张 2 Credits，比例 1:1。
                 </p>
               </div>
               <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                数量
-                <select
-                  className="h-8 rounded-md border bg-background px-2 text-sm text-foreground"
-                  onChange={(event) =>
-                    setMainImageCount(Number(event.target.value))
-                  }
-                  value={mainImageCount}
-                >
-                  {mainImageCountOptions.map((count) => (
+                总张数
+                  <select
+                    className="h-8 rounded-md border bg-background px-2 text-sm text-foreground"
+                    onChange={(event) =>
+                      handleListingImageCountChange(Number(event.target.value))
+                    }
+                    value={listingImageCount}
+                  >
+                  {listingImageCountOptions.map((count) => (
                     <option key={count} value={count}>
                       {count}
                     </option>
                   ))}
                 </select>
+              </label>
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {Array.from({ length: listingImageCount }, (_item, index) => {
+                const slotId = `AS-${String(index + 1).padStart(2, "0")}`;
+
+                return (
+                  <label
+                    className="flex items-center justify-between gap-3 rounded-md bg-secondary p-2 text-xs text-muted-foreground"
+                    key={slotId}
+                  >
+                    <span className="font-medium text-foreground">
+                      {slotId}
+                    </span>
+                    <select
+                      className="h-8 min-w-0 rounded-md border bg-background px-2 text-sm text-foreground"
+                      onChange={(event) =>
+                        updateListingImageRole(
+                          index,
+                          event.target.value as ListingImageRole,
+                        )
+                      }
+                      value={
+                        listingImageRoles[index] ||
+                        defaultListingImageRoles[index] ||
+                        "benefit"
+                      }
+                    >
+                      {listingImageRoleOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                );
+              })}
+            </div>
+            <div className="mt-4 grid gap-3">
+              <label className="grid gap-1 text-xs text-muted-foreground">
+                参考图影响比例：{referenceInfluence}%
+                <input
+                  className="w-full"
+                  max={80}
+                  min={0}
+                  onChange={(event) =>
+                    updateReferenceInfluence(Number(event.target.value))
+                  }
+                  step={5}
+                  type="range"
+                  value={referenceInfluence}
+                />
+              </label>
+              <div className="grid gap-2 text-xs text-muted-foreground">
+                <span>参考风格图</span>
+                <input
+                  accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                  className="sr-only"
+                  id={referenceStyleInputId}
+                  onChange={(event) =>
+                    void handleReferenceStyleUpload(event.target.files?.[0])
+                  }
+                  ref={referenceStyleInputRef}
+                  type="file"
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button asChild size="sm" variant="outline">
+                    <label htmlFor={referenceStyleInputId}>上传参考图</label>
+                  </Button>
+                  {referenceStyleUploadStatus === "uploading" ? (
+                    <span className="inline-flex items-center gap-1 text-foreground">
+                      <Loader2 aria-hidden="true" className="size-3 animate-spin" />
+                      上传中...
+                    </span>
+                  ) : null}
+                  {referenceStyleImage ? (
+                    <>
+                      <span className="truncate text-foreground">
+                        {referenceStyleImage.fileName}
+                      </span>
+                      <Button
+                        onClick={removeReferenceStyleImage}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        移除
+                      </Button>
+                    </>
+                  ) : (
+                    <span>未上传时按平台默认风格生成。</span>
+                  )}
+                </div>
+                {referenceStyleError ? (
+                  <p className="rounded-md border border-destructive/30 bg-destructive/10 p-2 text-destructive">
+                    {referenceStyleError}
+                  </p>
+                ) : null}
+              </div>
+              <label className="grid gap-1 text-xs text-muted-foreground">
+                简短要求
+                <input
+                  className="h-9 rounded-md border bg-background px-3 text-sm text-foreground"
+                  onChange={(event) => updateCustomRequirement(event.target.value)}
+                  placeholder="例如：整体更清爽、减少文字、偏高端质感"
+                  value={customRequirement}
+                />
               </label>
             </div>
           </div>
@@ -1360,45 +2159,97 @@ export function ImageUploader({
           <div className="mt-4 space-y-4">
             {result.recognition ? (
               <>
+                {result.recognitionWarning ? (
+                  <p className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm leading-6 text-amber-800">
+                    {result.recognitionWarning}
+                  </p>
+                ) : null}
                 <div className="space-y-3 rounded-md bg-secondary p-3 text-sm">
-                  <div className="flex justify-between gap-4">
-                    <span className="text-muted-foreground">
+                  <div>
+                    <label className="text-xs text-muted-foreground">
                       {dictionary.imageUploader.product}
-                    </span>
-                    <span className="text-right font-medium">
-                      {result.recognition.product_name ||
-                        dictionary.common.unknown}
-                    </span>
+                    </label>
+                    <input
+                      className="mt-1 h-9 w-full rounded-md border bg-background px-3 text-sm"
+                      onChange={(event) =>
+                        updateRecognitionField(
+                          "product_name",
+                          event.target.value,
+                        )
+                      }
+                      placeholder={dictionary.common.unknown}
+                      value={result.recognition.product_name}
+                    />
                   </div>
-                  <div className="flex justify-between gap-4">
-                    <span className="text-muted-foreground">
+                  <div>
+                    <label className="text-xs text-muted-foreground">
                       {dictionary.imageUploader.category}
-                    </span>
-                    <span className="text-right font-medium">
-                      {result.recognition.category || dictionary.common.unknown}
-                    </span>
+                    </label>
+                    <input
+                      className="mt-1 h-9 w-full rounded-md border bg-background px-3 text-sm"
+                      onChange={(event) =>
+                        updateRecognitionField("category", event.target.value)
+                      }
+                      placeholder={dictionary.common.unknown}
+                      value={result.recognition.category}
+                    />
                   </div>
-                  <div className="flex justify-between gap-4">
-                    <span className="text-muted-foreground">
+                  <div>
+                    <label className="text-xs text-muted-foreground">
                       {dictionary.imageUploader.targetUser}
-                    </span>
-                    <span className="text-right font-medium">
-                      {result.recognition.target_user ||
-                        dictionary.common.unknown}
-                    </span>
+                    </label>
+                    <input
+                      className="mt-1 h-9 w-full rounded-md border bg-background px-3 text-sm"
+                      onChange={(event) =>
+                        updateRecognitionField(
+                          "target_user",
+                          event.target.value,
+                        )
+                      }
+                      placeholder={dictionary.common.unknown}
+                      value={result.recognition.target_user}
+                    />
                   </div>
-                  {result.recognition.highlights.length ? (
-                    <div>
-                      <span className="text-muted-foreground">
+                  <div>
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <span className="text-xs text-muted-foreground">
                         {dictionary.imageUploader.highlights}
                       </span>
-                      <ul className="mt-2 list-disc space-y-1 pl-5">
-                        {result.recognition.highlights.map((highlight) => (
-                          <li key={highlight}>{highlight}</li>
-                        ))}
-                      </ul>
+                      <Button
+                        onClick={addRecognitionHighlight}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        添加
+                      </Button>
                     </div>
-                  ) : null}
+                    <div className="grid gap-2">
+                      {result.recognition.highlights.map((highlight, index) => (
+                        <div className="flex items-center gap-2" key={index}>
+                          <input
+                            className="h-9 min-w-0 flex-1 rounded-md border bg-background px-3 text-sm"
+                            onChange={(event) =>
+                              updateRecognitionHighlight(
+                                index,
+                                event.target.value,
+                              )
+                            }
+                            placeholder={`卖点 ${index + 1}`}
+                            value={highlight}
+                          />
+                          <Button
+                            onClick={() => removeRecognitionHighlight(index)}
+                            size="sm"
+                            type="button"
+                            variant="outline"
+                          >
+                            移除
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
 
                 <div className="rounded-md border p-3">
@@ -1499,12 +2350,6 @@ export function ImageUploader({
                             <h4 className="text-sm font-medium">
                               {dictionary.imageUploader.aiImageGeneration}
                             </h4>
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              {
-                                dictionary.imageUploader
-                                  .aiImageGenerationDescription
-                              }
-                            </p>
                           </div>
                           <div className="flex flex-wrap items-center gap-2">
                             <Button
@@ -1527,7 +2372,7 @@ export function ImageUploader({
                               ) : (
                                 <WandSparkles aria-hidden="true" />
                               )}
-                              主图 1:1 · {mainImageCreditCost} Credits
+                              副图套组 1:1 · {mainImageCreditCost} Credits
                             </Button>
                           </div>
                         </div>
@@ -1638,6 +2483,28 @@ export function ImageUploader({
                                     />
                                   ) : null}
                                 </div>
+                                {prompts &&
+                                getListingPromptForJob(
+                                  normalizePromptOutput(prompts),
+                                  job,
+                                ) ? (
+                                  <Button
+                                    className="mb-3"
+                                    disabled={
+                                      imageQueueStatus === "queueing" ||
+                                      imageQueueStatus === "processing"
+                                    }
+                                    onClick={() =>
+                                      void handleRegenerateListingImage(job)
+                                    }
+                                    size="sm"
+                                    type="button"
+                                    variant="outline"
+                                  >
+                                    <RefreshCw aria-hidden="true" />
+                                    重新生成此图
+                                  </Button>
+                                ) : null}
 
                                 {job.public_url && job.status === "completed" ? (
                                   <Image
@@ -1934,29 +2801,43 @@ export function ImageUploader({
                       </div>
                       ) : null}
 
-                      {Object.entries(normalizedPrompts)
-                        .filter(([, value]) => typeof value === "string")
-                        .map(([key, value]) => (
-                        <div key={key} className="rounded-md bg-secondary p-3">
-                          <div className="mb-2 flex items-center justify-between gap-3">
-                            <h4 className="text-sm font-medium">{key}</h4>
-                            <Button
-                              onClick={() =>
-                                navigator.clipboard.writeText(value as string)
-                              }
-                              size="sm"
-                              type="button"
-                              variant="outline"
+                      {visiblePromptEntries.length ? (
+                        <div className="grid gap-3">
+                          {visiblePromptEntries.map((prompt) => (
+                            <div
+                              className="rounded-md bg-secondary p-3"
+                              key={prompt.id}
                             >
-                              <Copy aria-hidden="true" />
-                              {dictionary.common.copy}
-                            </Button>
-                          </div>
-                          <p className="max-h-44 overflow-auto whitespace-pre-wrap text-xs leading-5 text-muted-foreground">
-                            {value as string}
-                          </p>
+                              <div className="mb-2 flex items-center justify-between gap-3">
+                                <h4 className="text-sm font-medium">
+                                  {prompt.id} · {prompt.title}
+                                </h4>
+                                <Button
+                                  onClick={() =>
+                                    navigator.clipboard.writeText(prompt.prompt)
+                                  }
+                                  size="sm"
+                                  type="button"
+                                  variant="outline"
+                                >
+                                  <Copy aria-hidden="true" />
+                                  {dictionary.common.copy}
+                                </Button>
+                              </div>
+                              <textarea
+                                className="min-h-44 w-full resize-y rounded-md border bg-background px-3 py-2 text-xs leading-5 text-foreground"
+                                onChange={(event) =>
+                                  updatePromptEntryPrompt(
+                                    prompt.id,
+                                    event.target.value,
+                                  )
+                                }
+                                value={prompt.prompt}
+                              />
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      ) : null}
                     </div>
                   ) : null}
                 </div>
