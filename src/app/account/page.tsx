@@ -7,9 +7,13 @@ import {
   getDailyCheckInStatus,
   getUserCreditBalance,
 } from "@/lib/credits";
+import { getDictionary } from "@/lib/i18n";
+import { getCurrentLanguage } from "@/lib/i18n-server";
 import { supabaseServer, isSupabaseConfigured } from "@/lib/supabaseClient";
 
 export default async function AccountPage() {
+  const language = await getCurrentLanguage();
+  const dictionary = getDictionary(language);
   const supabase = isSupabaseConfigured() ? await supabaseServer() : null;
   const user = supabase ? (await supabase.auth.getUser()).data.user : null;
   const creditBalance =
@@ -29,27 +33,31 @@ export default async function AccountPage() {
     <section className="space-y-6">
       <div>
         <p className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
-          Settings
+          {dictionary.accountPage.eyebrow}
         </p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight">Account</h1>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight">
+          {dictionary.accountPage.title}
+        </h1>
       </div>
 
       <div className="rounded-lg border bg-card p-6">
-        <h2 className="text-base font-medium">Account details</h2>
+        <h2 className="text-base font-medium">
+          {dictionary.accountPage.details}
+        </h2>
         {user ? (
           <dl className="mt-4 grid gap-3 text-sm">
             <div>
-              <dt className="font-medium">Email</dt>
+              <dt className="font-medium">{dictionary.accountPage.email}</dt>
               <dd className="mt-1 text-muted-foreground">{user.email}</dd>
             </div>
             <div>
-              <dt className="font-medium">User ID</dt>
+              <dt className="font-medium">{dictionary.accountPage.userId}</dt>
               <dd className="mt-1 break-all text-muted-foreground">
                 {user.id}
               </dd>
             </div>
             <div>
-              <dt className="font-medium">Credits</dt>
+              <dt className="font-medium">{dictionary.common.credits}</dt>
               <dd className="mt-1 text-muted-foreground">
                 {creditBalance ?? 0}
               </dd>
@@ -58,10 +66,10 @@ export default async function AccountPage() {
         ) : (
           <div className="mt-4 space-y-4">
             <p className="text-sm text-muted-foreground">
-              Log in to view your account details.
+              {dictionary.accountPage.loginDescription}
             </p>
             <Button asChild>
-              <Link href="/login">Log in</Link>
+              <Link href="/login">{dictionary.auth.login}</Link>
             </Button>
           </div>
         )}
@@ -72,9 +80,13 @@ export default async function AccountPage() {
           <div className="rounded-lg border bg-card p-6">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
-                <h2 className="text-base font-medium">每日签到</h2>
+                <h2 className="text-base font-medium">
+                  {dictionary.accountPage.checkIn}
+                </h2>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  每天可领取 {dailyCheckInCredits} 积分，用于生成图片。
+                  {dictionary.accountPage.checkInDescription(
+                    dailyCheckInCredits,
+                  )}
                 </p>
               </div>
               <DailyCheckInButton
@@ -85,17 +97,29 @@ export default async function AccountPage() {
           </div>
 
           <div className="rounded-lg border bg-card p-6">
-            <h2 className="text-base font-medium">积分流水</h2>
+            <h2 className="text-base font-medium">
+              {dictionary.accountPage.creditHistory}
+            </h2>
             {credits?.data?.length ? (
               <div className="mt-4 overflow-x-auto">
                 <table className="w-full min-w-[640px] text-left text-sm">
                   <thead className="border-b text-xs uppercase text-muted-foreground">
                     <tr>
-                      <th className="py-2 pr-4 font-medium">类型</th>
-                      <th className="py-2 pr-4 font-medium">变动</th>
-                      <th className="py-2 pr-4 font-medium">余额</th>
-                      <th className="py-2 pr-4 font-medium">说明</th>
-                      <th className="py-2 pr-4 font-medium">时间</th>
+                      <th className="py-2 pr-4 font-medium">
+                        {dictionary.accountPage.transactionType}
+                      </th>
+                      <th className="py-2 pr-4 font-medium">
+                        {dictionary.common.credits}
+                      </th>
+                      <th className="py-2 pr-4 font-medium">
+                        {dictionary.accountPage.balance}
+                      </th>
+                      <th className="py-2 pr-4 font-medium">
+                        {dictionary.accountPage.note}
+                      </th>
+                      <th className="py-2 pr-4 font-medium">
+                        {dictionary.accountPage.time}
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
@@ -106,7 +130,7 @@ export default async function AccountPage() {
                       >;
                       const source =
                         metadata.source === "daily_check_in"
-                          ? "每日签到"
+                          ? dictionary.accountPage.checkIn
                           : metadata.reason || metadata.image_type || "-";
 
                       return (
@@ -125,7 +149,9 @@ export default async function AccountPage() {
                             {String(source)}
                           </td>
                         <td className="py-3 pr-4 text-muted-foreground">
-                          {new Date(credit.created_at).toLocaleString()}
+                          {new Date(credit.created_at).toLocaleString(
+                            language === "zh" ? "zh-CN" : "en-US",
+                          )}
                         </td>
                         </tr>
                       );
@@ -135,7 +161,7 @@ export default async function AccountPage() {
               </div>
             ) : (
               <p className="mt-3 text-sm text-muted-foreground">
-                暂无积分流水，完成首次签到后会显示在这里。
+                {dictionary.accountPage.creditHistoryEmpty}
               </p>
             )}
           </div>

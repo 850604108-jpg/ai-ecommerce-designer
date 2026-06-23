@@ -4,6 +4,19 @@ type OpenAIErrorPayload = {
   };
 };
 
+const retryableStatuses = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
+let nextOpenAIKeyIndex = 0;
+
+class OpenAIRequestFailure extends Error {
+  constructor(
+    message: string,
+    readonly retryable: boolean,
+  ) {
+    super(message);
+    this.name = "OpenAIRequestFailure";
+  }
+}
+
 export type OpenAIResponseContent = {
   text?: string;
   type?: string;
@@ -25,12 +38,38 @@ export const defaultOpenAIPromptModel =
   process.env.OPENAI_VISION_MODEL ||
   "gpt-5.5";
 
+export function getOpenAIApiKeys() {
+  const configuredKeys = [
+    process.env.OPENAI_API_KEY,
+    process.env.OPENAI_API_KEYS,
+  ]
+    .filter(Boolean)
+    .flatMap((value) => value?.split(/[\s,;]+/) || [])
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  return Array.from(new Set(configuredKeys));
+}
+
 export function getOpenAIApiKey() {
-  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  const apiKey = getOpenAIApiKeys()[0];
 
   if (!apiKey) {
     throw new Error("Missing OPENAI_API_KEY.");
   }
+
+  return apiKey;
+}
+
+function getNextOpenAIApiKey() {
+  const apiKeys = getOpenAIApiKeys();
+
+  if (!apiKeys.length) {
+    throw new Error("Missing OPENAI_API_KEY.");
+  }
+
+  const apiKey = apiKeys[nextOpenAIKeyIndex % apiKeys.length];
+  nextOpenAIKeyIndex = (nextOpenAIKeyIndex + 1) % apiKeys.length;
 
   return apiKey;
 }
@@ -51,58 +90,143 @@ function getOpenAIProxyUrl() {
   ).trim();
 }
 
+function isRetryableOpenAIStatus(status: number) {
+  return retryableStatuses.has(status);
+}
+
+function toOpenAIErrorMessage(input: {
+  fallback: string;
+  path: string;
+  responseText: string;
+  status: number;
+}) {
+  try {
+    const payload = JSON.parse(input.responseText) as OpenAIErrorPayload;
+
+    return payload.error?.message || input.fallback;
+  } catch {
+    const preview = input.responseText
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 120);
+
+    return `OpenAI API request failed (${input.status}) for ${input.path}. ${preview}`;
+  }
+}
+
+async function fetchOpenAIWithKey(input: {
+  apiKey: string;
+  body: string;
+  proxyUrl: string;
+  url: string;
+}) {
+  const init = {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${input.apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: input.body,
+  } satisfies RequestInit;
+
+  if (input.proxyUrl) {
+    const { ProxyAgent, fetch: undiciFetch } = await import("undici");
+
+    return (await undiciFetch(input.url, {
+      method: init.method,
+      headers: init.headers as Record<string, string>,
+      body: init.body as string,
+      dispatcher: new ProxyAgent(input.proxyUrl),
+    })) as unknown as Response;
+  }
+
+  return fetch(input.url, init);
+}
+
 export async function openAIFetch<TPayload>(
   path: string,
   body: Record<string, unknown>,
 ) {
   const proxyUrl = getOpenAIProxyUrl();
   const url = `${getOpenAIBaseUrl()}/${path.replace(/^\/+/, "")}`;
-  const init = {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${getOpenAIApiKey()}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  } satisfies RequestInit;
-  let response: Response;
+  const requestBody = JSON.stringify(body);
+  const apiKeys = getOpenAIApiKeys();
+  let lastError: Error | null = null;
 
-  if (proxyUrl) {
-    const { ProxyAgent, fetch: undiciFetch } = await import("undici");
-    const proxyInit = {
-      method: init.method,
-      headers: init.headers as Record<string, string>,
-      body: init.body as string,
-      dispatcher: new ProxyAgent(proxyUrl),
-    };
-
-    response = (await undiciFetch(url, proxyInit)) as unknown as Response;
-  } else {
-    response = await fetch(url, init);
+  if (!apiKeys.length) {
+    throw new Error("Missing OPENAI_API_KEY.");
   }
 
-  const responseText = await response.text();
-  let payload: TPayload & OpenAIErrorPayload;
+  for (let attempt = 0; attempt < apiKeys.length; attempt += 1) {
+    const apiKey = getNextOpenAIApiKey();
 
-  try {
-    payload = JSON.parse(responseText) as TPayload & OpenAIErrorPayload;
-  } catch {
-    const contentType = response.headers.get("content-type") || "unknown";
-    const preview = responseText
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, 120);
+    try {
+      const response = await fetchOpenAIWithKey({
+        apiKey,
+        body: requestBody,
+        proxyUrl,
+        url,
+      });
+      const responseText = await response.text();
 
-    throw new Error(
-      `OpenAI API returned a non-JSON response (${response.status}, ${contentType}) for ${path}. ${preview}`,
-    );
+      if (!response.ok) {
+        const message = toOpenAIErrorMessage({
+          fallback: "OpenAI API request failed.",
+          path,
+          responseText,
+          status: response.status,
+        });
+        const retryable = isRetryableOpenAIStatus(response.status);
+        lastError = new OpenAIRequestFailure(message, retryable);
+
+        if (
+          retryable &&
+          attempt < apiKeys.length - 1
+        ) {
+          continue;
+        }
+
+        throw lastError;
+      }
+
+      try {
+        return JSON.parse(responseText) as TPayload & OpenAIErrorPayload;
+      } catch {
+        const contentType = response.headers.get("content-type") || "unknown";
+        const preview = responseText
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 120);
+        lastError = new Error(
+          `OpenAI API returned a non-JSON response (${response.status}, ${contentType}) for ${path}. ${preview}`,
+        );
+
+        if (attempt < apiKeys.length - 1) {
+          continue;
+        }
+
+        throw lastError;
+      }
+    } catch (error) {
+      lastError =
+        error instanceof Error
+          ? error
+          : new Error("OpenAI API request failed.");
+
+      if (
+        error instanceof OpenAIRequestFailure &&
+        !error.retryable
+      ) {
+        throw error;
+      }
+
+      if (attempt < apiKeys.length - 1) {
+        continue;
+      }
+    }
   }
 
-  if (!response.ok) {
-    throw new Error(payload.error?.message || "OpenAI API request failed.");
-  }
-
-  return payload;
+  throw lastError || new Error("OpenAI API request failed.");
 }
 
 export function getOpenAIResponseText(response: OpenAIResponsesPayload) {

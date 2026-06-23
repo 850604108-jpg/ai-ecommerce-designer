@@ -25,6 +25,7 @@ const defaultImageModel = defaultOpenAIImageModel;
 const defaultSize = "1024x1024";
 const defaultQuality = "medium";
 const defaultOutputFormat = "webp";
+export const recycleBinRetentionDays = 30;
 const historySelect =
   "id,project_id,prompt,model,storage_bucket,storage_path,status,width,height,credits_spent,error_message,generation_params,metadata,created_at,updated_at,project:projects(id,name,description,status,created_at)";
 const jobSelect =
@@ -339,17 +340,164 @@ export async function listImageGenerationHistory(input: {
   };
 }
 
+export async function listDeletedImageGenerationHistory(input: {
+  supabase: SupabaseClient;
+  userId: string;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+}) {
+  const pageSize = Math.min(Math.max(input.pageSize || 6, 1), 24);
+  const page = Math.max(input.page || 1, 1);
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+  const search = normalizeSearchTerm(input.search || "");
+  const cutoff = new Date(
+    Date.now() - recycleBinRetentionDays * 24 * 60 * 60 * 1000,
+  ).toISOString();
+  let matchingProjectIds: string[] = [];
+
+  if (search) {
+    const { data: projects, error: projectSearchError } = await input.supabase
+      .from("projects")
+      .select("id")
+      .eq("user_id", input.userId)
+      .or(`name.ilike.%${search}%,description.ilike.%${search}%`)
+      .limit(50);
+
+    if (projectSearchError) {
+      throw new Error(projectSearchError.message);
+    }
+
+    matchingProjectIds = (projects || []).map((project) => project.id as string);
+  }
+
+  let query = input.supabase
+    .from("generated_images")
+    .select(historySelect, { count: "exact" })
+    .eq("user_id", input.userId)
+    .eq("status", "deleted")
+    .gte("updated_at", cutoff);
+
+  if (search) {
+    const filters = [`prompt.ilike.%${search}%`];
+
+    if (matchingProjectIds.length) {
+      filters.push(`project_id.in.(${matchingProjectIds.join(",")})`);
+    }
+
+    query = query.or(filters.join(","));
+  }
+
+  const { count, data, error } = await query
+    .order("updated_at", { ascending: false })
+    .range(from, to);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return {
+    jobs: (data as unknown as GeneratedImageHistoryJob[]).map((job) =>
+      normalizeHistoryJob(input.supabase, job),
+    ),
+    page,
+    pageCount: Math.max(Math.ceil((count || 0) / pageSize), 1),
+    pageSize,
+    totalCount: count || 0,
+  };
+}
+
 export async function softDeleteImageGenerationJob(input: {
   supabase: SupabaseClient;
   userId: string;
   jobId: string;
 }) {
-  const { data, error } = await input.supabase
+  const { data: currentJob, error: selectError } = await input.supabase
     .from("generated_images")
-    .update({ status: "deleted", error_message: null })
+    .select(jobSelect)
     .eq("id", input.jobId)
     .eq("user_id", input.userId)
     .neq("status", "deleted")
+    .single();
+
+  if (selectError) {
+    throw new Error(selectError.message);
+  }
+
+  const currentMetadata =
+    ((currentJob as GeneratedImageJob).metadata || {}) as Record<string, unknown>;
+
+  const { data, error } = await input.supabase
+    .from("generated_images")
+    .update({
+      status: "deleted",
+      error_message: null,
+      metadata: {
+        ...currentMetadata,
+        recycle_bin_deleted_at: new Date().toISOString(),
+        recycle_bin_previous_status: (currentJob as GeneratedImageJob).status,
+      },
+    })
+    .eq("id", input.jobId)
+    .eq("user_id", input.userId)
+    .neq("status", "deleted")
+    .select(jobSelect)
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return withPublicUrl(input.supabase, data as GeneratedImageJob);
+}
+
+export async function restoreImageGenerationJob(input: {
+  supabase: SupabaseClient;
+  userId: string;
+  jobId: string;
+}) {
+  const cutoff = new Date(
+    Date.now() - recycleBinRetentionDays * 24 * 60 * 60 * 1000,
+  ).toISOString();
+  const { data: currentJob, error: selectError } = await input.supabase
+    .from("generated_images")
+    .select(jobSelect)
+    .eq("id", input.jobId)
+    .eq("user_id", input.userId)
+    .eq("status", "deleted")
+    .gte("updated_at", cutoff)
+    .single();
+
+  if (selectError) {
+    throw new Error(selectError.message);
+  }
+
+  const metadata =
+    ((currentJob as GeneratedImageJob).metadata || {}) as Record<string, unknown>;
+  const previousStatus = metadata.recycle_bin_previous_status;
+  const restoreStatus =
+    previousStatus === "queued" ||
+    previousStatus === "processing" ||
+    previousStatus === "completed" ||
+    previousStatus === "failed"
+      ? previousStatus
+      : (currentJob as GeneratedImageJob).storage_path
+        ? "completed"
+        : "failed";
+  const restoredMetadata = { ...metadata };
+  delete restoredMetadata.recycle_bin_deleted_at;
+  delete restoredMetadata.recycle_bin_previous_status;
+
+  const { data, error } = await input.supabase
+    .from("generated_images")
+    .update({
+      status: restoreStatus,
+      metadata: restoredMetadata,
+    })
+    .eq("id", input.jobId)
+    .eq("user_id", input.userId)
+    .eq("status", "deleted")
     .select(jobSelect)
     .single();
 

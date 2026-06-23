@@ -6,7 +6,10 @@ import { Button } from "@/components/ui/button";
 import { getUserCreditBalance } from "@/lib/credits";
 import { getDictionary } from "@/lib/i18n";
 import { getCurrentLanguage } from "@/lib/i18n-server";
-import { listImageGenerationHistory } from "@/lib/image-generation/jobs";
+import {
+  listDeletedImageGenerationHistory,
+  listImageGenerationHistory,
+} from "@/lib/image-generation/jobs";
 import { listDashboardProjects } from "@/lib/projects";
 import { supabaseServer, isSupabaseConfigured } from "@/lib/supabaseClient";
 
@@ -68,6 +71,13 @@ function getEmptyDashboardData() {
       projectCount: 0,
       totalCount: 0,
     },
+    recycleBin: {
+      jobs: [],
+      page: 1,
+      pageCount: 1,
+      pageSize: 6,
+      totalCount: 0,
+    },
     projects: {
       page: 1,
       pageCount: 1,
@@ -89,6 +99,10 @@ export default async function DashboardPage({
     Number.parseInt(getParam(params, "imagePage"), 10) || 1,
     1,
   );
+  const recyclePage = Math.max(
+    Number.parseInt(getParam(params, "recyclePage"), 10) || 1,
+    1,
+  );
   const projectPage = Math.max(
     Number.parseInt(getParam(params, "projectPage"), 10) || 1,
     1,
@@ -99,6 +113,7 @@ export default async function DashboardPage({
     | {
         creditBalance: number | null;
         history: Awaited<ReturnType<typeof listImageGenerationHistory>>;
+        recycleBin: Awaited<ReturnType<typeof listDeletedImageGenerationHistory>>;
         projects: Awaited<ReturnType<typeof listDashboardProjects>>;
       }
     | null = null;
@@ -106,7 +121,7 @@ export default async function DashboardPage({
 
   if (supabase && user) {
     try {
-      const [projects, history] = await Promise.all([
+      const [projects, history, recycleBin] = await Promise.all([
         listDashboardProjects({
           supabase,
           userId: user.id,
@@ -121,12 +136,19 @@ export default async function DashboardPage({
           page: imagePage,
           pageSize: 8,
         }),
+        listDeletedImageGenerationHistory({
+          supabase,
+          userId: user.id,
+          search,
+          page: recyclePage,
+          pageSize: 6,
+        }),
       ]);
       const creditBalance = await getUserCreditBalance(supabase, user.id).catch(
         () => null,
       );
 
-      dashboardData = { creditBalance, history, projects };
+      dashboardData = { creditBalance, history, projects, recycleBin };
     } catch (error) {
       if (isMissingSupabaseSchemaError(error, ["projects", "generated_images"])) {
         dashboardData = getEmptyDashboardData();
@@ -166,6 +188,10 @@ export default async function DashboardPage({
           projectPageCount={dashboardData.projects.pageCount}
           projectTotalCount={dashboardData.projects.totalCount}
           projects={dashboardData.projects.projects}
+          recycleBinJobs={dashboardData.recycleBin.jobs}
+          recyclePage={dashboardData.recycleBin.page}
+          recyclePageCount={dashboardData.recycleBin.pageCount}
+          recycleTotalCount={dashboardData.recycleBin.totalCount}
           language={language}
           search={search}
         />

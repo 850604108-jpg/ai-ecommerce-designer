@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { LanguageProvider } from "@/components/i18n/language-provider";
+import { BackgroundGenerationProvider } from "@/components/generation/background-generation-provider";
 import { SiteHeader } from "@/components/layout/site-header";
 import { getAppUrl } from "@/lib/app-url";
 import { getCurrentLanguage } from "@/lib/i18n-server";
@@ -53,10 +54,12 @@ export default async function RootLayout({
     <html lang={language === "zh" ? "zh-CN" : "en"}>
       <body>
         <LanguageProvider initialLanguage={language}>
-          <SiteHeader language={language} />
-          <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
-            {children}
-          </main>
+          <BackgroundGenerationProvider>
+            <SiteHeader language={language} />
+            <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
+              {children}
+            </main>
+          </BackgroundGenerationProvider>
         </LanguageProvider>
       </body>
     </html>

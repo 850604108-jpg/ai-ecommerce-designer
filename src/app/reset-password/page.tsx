@@ -1,6 +1,8 @@
 import { updatePassword } from "@/app/auth/actions";
 import { AuthMessage, getAuthMessage } from "@/app/auth/auth-message";
 import { Button } from "@/components/ui/button";
+import { getDictionary } from "@/lib/i18n";
+import { getCurrentLanguage } from "@/lib/i18n-server";
 
 type ResetPasswordPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -10,16 +12,19 @@ export default async function ResetPasswordPage({
   searchParams,
 }: ResetPasswordPageProps) {
   const { error, message } = await getAuthMessage(searchParams);
+  const dictionary = getDictionary(await getCurrentLanguage());
 
   return (
     <section className="mx-auto grid max-w-md gap-6 py-8">
       <div className="space-y-2">
         <p className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
-          Choose new password
+          {dictionary.auth.resetEyebrow}
         </p>
-        <h1 className="text-3xl font-semibold tracking-tight">Update password</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">
+          {dictionary.auth.resetTitle}
+        </h1>
         <p className="text-sm leading-6 text-muted-foreground">
-          Set a new password for your account.
+          {dictionary.auth.resetDescription}
         </p>
       </div>
 
@@ -27,7 +32,7 @@ export default async function ResetPasswordPage({
         <AuthMessage error={error} message={message} />
         <div className="space-y-2">
           <label className="text-sm font-medium" htmlFor="password">
-            New password
+            {dictionary.auth.newPassword}
           </label>
           <input
             autoComplete="new-password"
@@ -40,7 +45,7 @@ export default async function ResetPasswordPage({
           />
         </div>
         <Button className="w-full" type="submit">
-          Update password
+          {dictionary.auth.resetTitle}
         </Button>
       </form>
     </section>

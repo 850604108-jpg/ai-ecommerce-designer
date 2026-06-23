@@ -4,6 +4,7 @@ import { useState } from "react";
 import { CheckCircle2, Gift, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
+import { useLanguage } from "@/components/i18n/language-provider";
 import { Button } from "@/components/ui/button";
 
 type DailyCheckInButtonProps = {
@@ -23,6 +24,7 @@ export function DailyCheckInButton({
   checkedIn,
   credits,
 }: DailyCheckInButtonProps) {
+  const { dictionary } = useLanguage();
   const router = useRouter();
   const [isCheckedIn, setIsCheckedIn] = useState(checkedIn);
   const [isLoading, setIsLoading] = useState(false);
@@ -41,21 +43,23 @@ export function DailyCheckInButton({
       const payload = (await response.json()) as CheckInResponse;
 
       if (!response.ok || !payload.checkedIn) {
-        throw new Error(payload.error || "签到失败，请稍后再试。");
+        throw new Error(payload.error || dictionary.accountPage.checkInFailed);
       }
 
       setIsCheckedIn(true);
       setMessage(
         payload.alreadyCheckedIn
-          ? "今天已经签到过了，明天再来。"
-          : `签到成功，已领取 ${payload.creditsGranted || credits} 积分。`,
+          ? dictionary.accountPage.checkInAlready
+          : dictionary.accountPage.checkInSuccess(
+              payload.creditsGranted || credits,
+            ),
       );
       router.refresh();
     } catch (checkInError) {
       setError(
         checkInError instanceof Error
           ? checkInError.message
-          : "签到失败，请稍后再试。",
+          : dictionary.accountPage.checkInFailed,
       );
     } finally {
       setIsLoading(false);
@@ -76,7 +80,9 @@ export function DailyCheckInButton({
         ) : (
           <Gift aria-hidden="true" />
         )}
-        {isCheckedIn ? "今日已签到" : `签到领取 ${credits} 积分`}
+        {isCheckedIn
+          ? dictionary.accountPage.checkInDone
+          : dictionary.accountPage.checkInButton(credits)}
       </Button>
       {message ? <p className="text-sm text-emerald-700">{message}</p> : null}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}

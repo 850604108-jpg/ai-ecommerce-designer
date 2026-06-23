@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { CheckCircle2, Loader2, XCircle } from "lucide-react";
 
+import { useLanguage } from "@/components/i18n/language-provider";
+
 type SupabaseBucketStatus = {
   created: boolean;
   error: string | null;
@@ -32,6 +34,8 @@ type PanelState =
   | { error: ""; loading: true; payload: null };
 
 export function SupabaseDebugPanel() {
+  const { dictionary } = useLanguage();
+  const loadFailedMessage = dictionary.debug.loadFailed;
   const [state, setState] = useState<PanelState>({
     error: "",
     loading: true,
@@ -57,7 +61,7 @@ export function SupabaseDebugPanel() {
             error:
               error instanceof Error
                 ? error.message
-                : "Failed to load Supabase status.",
+                : loadFailedMessage,
             loading: false,
             payload: null,
           });
@@ -70,7 +74,7 @@ export function SupabaseDebugPanel() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [loadFailedMessage]);
 
   const connected = state.payload?.connected ?? false;
 
@@ -78,9 +82,9 @@ export function SupabaseDebugPanel() {
     <section className="rounded-md border bg-background p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold">Supabase Debug Panel</h2>
+          <h2 className="text-sm font-semibold">{dictionary.debug.title}</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Runtime connection, credentials, and storage bucket status.
+            {dictionary.debug.description}
           </p>
         </div>
         <div
@@ -97,7 +101,11 @@ export function SupabaseDebugPanel() {
           ) : (
             <XCircle aria-hidden="true" className="size-3" />
           )}
-          {state.loading ? "Checking" : connected ? "Connected" : "Not connected"}
+          {state.loading
+            ? dictionary.debug.checking
+            : connected
+              ? dictionary.debug.connected
+              : dictionary.debug.notConnected}
         </div>
       </div>
 
@@ -110,38 +118,44 @@ export function SupabaseDebugPanel() {
       {state.payload ? (
         <div className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
           <StatusRow
-            label="Supabase URL"
+            label={dictionary.debug.supabaseUrl}
             ok={state.payload.status.supabaseUrlValid}
-            value={state.payload.status.supabaseUrl || "Missing"}
+            value={state.payload.status.supabaseUrl || dictionary.debug.missing}
           />
           <StatusRow
-            label="Anon key"
+            label={dictionary.debug.anonKey}
             ok={state.payload.status.anonKeyConfigured}
-            value={state.payload.status.anonKeyConfigured ? "Configured" : "Missing"}
-          />
-          <StatusRow
-            label="Service role"
-            ok={state.payload.status.serviceRoleConfigured}
             value={
-              state.payload.status.serviceRoleConfigured ? "Configured" : "Missing"
+              state.payload.status.anonKeyConfigured
+                ? dictionary.debug.configured
+                : dictionary.debug.missing
             }
           />
           <StatusRow
-            label="Database"
+            label={dictionary.debug.serviceRole}
+            ok={state.payload.status.serviceRoleConfigured}
+            value={
+              state.payload.status.serviceRoleConfigured
+                ? dictionary.debug.configured
+                : dictionary.debug.missing
+            }
+          />
+          <StatusRow
+            label={dictionary.debug.database}
             ok={state.payload.status.database.ok}
-            value={state.payload.status.database.error || "Reachable"}
+            value={state.payload.status.database.error || dictionary.debug.reachable}
           />
           {state.payload.status.buckets.map((bucket) => (
             <StatusRow
               key={bucket.name}
-              label={`Bucket: ${bucket.name}`}
+              label={dictionary.debug.bucket(bucket.name)}
               ok={bucket.exists && !bucket.error}
               value={
                 bucket.error
                   ? bucket.error
                   : bucket.created
-                    ? "Created"
-                    : "Exists"
+                    ? dictionary.debug.created
+                    : dictionary.debug.exists
               }
             />
           ))}

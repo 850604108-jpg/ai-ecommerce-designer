@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition, type FormEvent } from "react";
 import {
   AlertCircle,
   Copy,
+  Download,
   Eye,
   FolderKanban,
   ImageIcon,
@@ -18,6 +19,13 @@ import { usePathname, useRouter } from "next/navigation";
 
 import { useLanguage } from "@/components/i18n/language-provider";
 import { Button } from "@/components/ui/button";
+import {
+  downloadImageAsset,
+  downloadImageBatch,
+  imageDownloadFormats,
+  type DownloadableImage,
+  type ImageDownloadFormat,
+} from "@/lib/download-images";
 import { type Language } from "@/lib/i18n";
 import {
   type GeneratedImageHistoryJob,
@@ -37,11 +45,15 @@ type HistoryDashboardProps = {
   projectPageCount: number;
   projectTotalCount: number;
   projects: DashboardProject[];
+  recycleBinJobs: GeneratedImageHistoryJob[];
+  recyclePage: number;
+  recyclePageCount: number;
+  recycleTotalCount: number;
   language: Language;
   search: string;
 };
 
-type BusyJobAction = "regenerate" | null;
+type BusyJobAction = "delete" | "regenerate" | "restore" | null;
 
 function getImageLabel(
   job: GeneratedImageHistoryJob,
@@ -66,6 +78,23 @@ function formatDate(value: string | null, language: Language) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function getRecycleBinDaysLeft(updatedAt: string | null) {
+  if (!updatedAt) {
+    return 30;
+  }
+
+  const deletedAt = new Date(updatedAt).getTime();
+
+  if (Number.isNaN(deletedAt)) {
+    return 30;
+  }
+
+  const expiresAt = deletedAt + 30 * 24 * 60 * 60 * 1000;
+  const daysLeft = Math.ceil((expiresAt - Date.now()) / (24 * 60 * 60 * 1000));
+
+  return Math.max(daysLeft, 0);
 }
 
 function StatusBadge({
@@ -102,6 +131,10 @@ export function HistoryDashboard({
   projectPageCount,
   projectTotalCount,
   projects,
+  recycleBinJobs,
+  recyclePage,
+  recyclePageCount,
+  recycleTotalCount,
   language,
   search,
 }: HistoryDashboardProps) {
@@ -116,18 +149,24 @@ export function HistoryDashboard({
   const [busyProjectId, setBusyProjectId] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState(errorMessage || "");
+  const [downloadFormat, setDownloadFormat] =
+    useState<ImageDownloadFormat>("original");
+  const [downloadingJobId, setDownloadingJobId] = useState<string | null>(null);
+  const [isBatchDownloading, setIsBatchDownloading] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const pageUrls = useMemo(() => {
     function makeUrl(next: {
       imagePage?: number;
       projectPage?: number;
+      recyclePage?: number;
       q?: string;
     }) {
       const params = new URLSearchParams();
       const nextSearch = next.q ?? search;
       const nextProjectPage = next.projectPage ?? projectPage;
       const nextImagePage = next.imagePage ?? imagePage;
+      const nextRecyclePage = next.recyclePage ?? recyclePage;
 
       if (nextSearch) {
         params.set("q", nextSearch);
@@ -141,6 +180,10 @@ export function HistoryDashboard({
         params.set("imagePage", String(nextImagePage));
       }
 
+      if (nextRecyclePage > 1) {
+        params.set("recyclePage", String(nextRecyclePage));
+      }
+
       const nextQuery = params.toString();
       return nextQuery ? `${pathname}?${nextQuery}` : pathname;
     }
@@ -148,6 +191,10 @@ export function HistoryDashboard({
     return {
       imagesNext: makeUrl({ imagePage: Math.min(imagePage + 1, imagePageCount) }),
       imagesPrevious: makeUrl({ imagePage: Math.max(imagePage - 1, 1) }),
+      recycleNext: makeUrl({
+        recyclePage: Math.min(recyclePage + 1, recyclePageCount),
+      }),
+      recyclePrevious: makeUrl({ recyclePage: Math.max(recyclePage - 1, 1) }),
       projectsNext: makeUrl({
         projectPage: Math.min(projectPage + 1, projectPageCount),
       }),
@@ -155,7 +202,16 @@ export function HistoryDashboard({
       search: (nextSearch: string) =>
         makeUrl({ imagePage: 1, projectPage: 1, q: nextSearch }),
     };
-  }, [imagePage, imagePageCount, pathname, projectPage, projectPageCount, search]);
+  }, [
+    imagePage,
+    imagePageCount,
+    pathname,
+    projectPage,
+    projectPageCount,
+    recyclePage,
+    recyclePageCount,
+    search,
+  ]);
 
   function navigate(url: string) {
     setError("");
@@ -174,6 +230,80 @@ export function HistoryDashboard({
     setError("");
     await navigator.clipboard.writeText(job.prompt);
     setNotice(d.dashboard.copyNotice);
+  }
+
+  function getDownloadableJobs() {
+    return jobs
+      .filter((job) => job.status === "completed" && Boolean(job.public_url))
+      .map(
+        (job) =>
+          ({
+            fileName: `${job.project?.name || "generated-image"}-${getImageLabel(
+              job,
+              d.common.imageTypes,
+            )}`,
+            url: job.public_url || "",
+          }) satisfies DownloadableImage,
+      );
+  }
+
+  async function downloadJob(job: GeneratedImageHistoryJob) {
+    if (!job.public_url) {
+      return;
+    }
+
+    setError("");
+    setNotice("");
+    setDownloadingJobId(job.id);
+
+    try {
+      await downloadImageAsset(
+        {
+          fileName: `${job.project?.name || "generated-image"}-${getImageLabel(
+            job,
+            d.common.imageTypes,
+          )}`,
+          url: job.public_url,
+        },
+        downloadFormat,
+      );
+    } catch (downloadError) {
+      setError(
+        downloadError instanceof Error
+          ? downloadError.message
+          : d.dashboard.downloadFailed,
+      );
+    } finally {
+      setDownloadingJobId(null);
+    }
+  }
+
+  async function handleBatchDownloadJobs() {
+    const images = getDownloadableJobs();
+
+    if (!images.length) {
+      return;
+    }
+
+    setError("");
+    setNotice("");
+    setIsBatchDownloading(true);
+
+    try {
+      await downloadImageBatch({
+        archiveName: "dashboard-generated-images",
+        format: downloadFormat,
+        images,
+      });
+    } catch (downloadError) {
+      setError(
+        downloadError instanceof Error
+          ? downloadError.message
+          : d.dashboard.batchDownloadFailed,
+      );
+    } finally {
+      setIsBatchDownloading(false);
+    }
   }
 
   async function regenerate(job: GeneratedImageHistoryJob) {
@@ -215,6 +345,70 @@ export function HistoryDashboard({
         regenerateError instanceof Error
           ? regenerateError.message
           : d.dashboard.regenerateFailed,
+      );
+    } finally {
+      setBusyJob(null);
+    }
+  }
+
+  async function deleteImageJob(job: GeneratedImageHistoryJob) {
+    const confirmed = window.confirm(
+      d.dashboard.confirmDeleteImage(getImageLabel(job, d.common.imageTypes)),
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setError("");
+    setNotice("");
+    setBusyJob({ action: "delete", id: job.id });
+
+    try {
+      const response = await fetch(`/api/image-generation/${job.id}`, {
+        method: "DELETE",
+      });
+      const payload = (await response.json()) as { error?: string };
+
+      if (!response.ok) {
+        throw new Error(payload.error || d.dashboard.deleteImageFailed);
+      }
+
+      setNotice(d.dashboard.deleteImageNotice);
+      router.refresh();
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : d.dashboard.deleteImageFailed,
+      );
+    } finally {
+      setBusyJob(null);
+    }
+  }
+
+  async function restoreImageJob(job: GeneratedImageHistoryJob) {
+    setError("");
+    setNotice("");
+    setBusyJob({ action: "restore", id: job.id });
+
+    try {
+      const response = await fetch(`/api/image-generation/${job.id}/restore`, {
+        method: "POST",
+      });
+      const payload = (await response.json()) as { error?: string };
+
+      if (!response.ok) {
+        throw new Error(payload.error || d.dashboard.restoreFailed);
+      }
+
+      setNotice(d.dashboard.restoreNotice);
+      router.refresh();
+    } catch (restoreError) {
+      setError(
+        restoreError instanceof Error
+          ? restoreError.message
+          : d.dashboard.restoreFailed,
       );
     } finally {
       setBusyJob(null);
@@ -468,9 +662,43 @@ export function HistoryDashboard({
               {d.dashboard.imagesDescription}
             </p>
           </div>
-          <span className="text-sm text-muted-foreground">
-            {d.dashboard.pageOf(imagePage, imagePageCount)}
-          </span>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <span className="text-sm text-muted-foreground">
+              {d.dashboard.pageOf(imagePage, imagePageCount)}
+            </span>
+            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+              {d.dashboard.downloadFormat}
+              <select
+                className="h-9 rounded-md border bg-background px-2 text-sm text-foreground"
+                onChange={(event) =>
+                  setDownloadFormat(event.target.value as ImageDownloadFormat)
+                }
+                value={downloadFormat}
+              >
+                {imageDownloadFormats.map((format) => (
+                  <option key={format} value={format}>
+                    {format === "original"
+                      ? d.dashboard.originalFormat
+                      : format.toUpperCase()}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Button
+              disabled={!getDownloadableJobs().length || isBatchDownloading}
+              onClick={() => void handleBatchDownloadJobs()}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {isBatchDownloading ? (
+                <Loader2 aria-hidden="true" className="animate-spin" />
+              ) : (
+                <Download aria-hidden="true" />
+              )}
+              {d.dashboard.batchDownloadCurrentPage}
+            </Button>
+          </div>
         </div>
 
         {jobs.length ? (
@@ -478,6 +706,8 @@ export function HistoryDashboard({
             {jobs.map((job) => {
               const isRegenerating =
                 busyJob?.id === job.id && busyJob.action === "regenerate";
+              const isDeleting =
+                busyJob?.id === job.id && busyJob.action === "delete";
 
               return (
                 <article className="rounded-lg border bg-card p-4" key={job.id}>
@@ -577,6 +807,26 @@ export function HistoryDashboard({
                           {d.common.copy}
                         </Button>
                         <Button
+                          disabled={
+                            !job.public_url || downloadingJobId === job.id
+                          }
+                          onClick={() => void downloadJob(job)}
+                          size="sm"
+                          title={d.dashboard.downloadImage}
+                          type="button"
+                          variant="outline"
+                        >
+                          {downloadingJobId === job.id ? (
+                            <Loader2
+                              aria-hidden="true"
+                              className="animate-spin"
+                            />
+                          ) : (
+                            <Download aria-hidden="true" />
+                          )}
+                          {d.dashboard.download}
+                        </Button>
+                        <Button
                           disabled={Boolean(busyJob)}
                           onClick={() => void regenerate(job)}
                           size="sm"
@@ -593,6 +843,24 @@ export function HistoryDashboard({
                             <RefreshCw aria-hidden="true" />
                           )}
                           {d.dashboard.regenerate}
+                        </Button>
+                        <Button
+                          disabled={Boolean(busyJob)}
+                          onClick={() => void deleteImageJob(job)}
+                          size="sm"
+                          title={d.dashboard.deleteImage}
+                          type="button"
+                          variant="outline"
+                        >
+                          {isDeleting ? (
+                            <Loader2
+                              aria-hidden="true"
+                              className="animate-spin"
+                            />
+                          ) : (
+                            <Trash2 aria-hidden="true" />
+                          )}
+                          {d.dashboard.deleteImage}
                         </Button>
                       </div>
                     </div>
@@ -624,6 +892,165 @@ export function HistoryDashboard({
           <Button
             disabled={imagePage >= imagePageCount || isPending}
             onClick={() => navigate(pageUrls.imagesNext)}
+            type="button"
+            variant="outline"
+          >
+            {d.common.nextPage}
+          </Button>
+        </div>
+      </section>
+
+      <section className="space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="flex items-center gap-2 text-lg font-semibold">
+              <Trash2 aria-hidden="true" className="size-5" />
+              {d.dashboard.recycleBin}
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {d.dashboard.recycleBinDescription}
+            </p>
+          </div>
+          <div className="text-right text-sm text-muted-foreground">
+            <p>{d.dashboard.pageOf(recyclePage, recyclePageCount)}</p>
+            <p>{d.dashboard.projectImageCount(recycleTotalCount)}</p>
+          </div>
+        </div>
+
+        {recycleBinJobs.length ? (
+          <div className="grid gap-4">
+            {recycleBinJobs.map((job) => {
+              const isRestoring =
+                busyJob?.id === job.id && busyJob.action === "restore";
+              const label = getImageLabel(job, d.common.imageTypes);
+
+              return (
+                <article className="rounded-lg border bg-card p-4" key={job.id}>
+                  <div className="grid gap-4 lg:grid-cols-[180px_1fr]">
+                    <div className="flex min-h-40 items-center justify-center rounded-md bg-secondary">
+                      {job.public_url ? (
+                        <Image
+                          alt={`${label} preview`}
+                          className="max-h-40 w-full rounded-md object-contain opacity-80"
+                          height={160}
+                          src={job.public_url}
+                          width={180}
+                        />
+                      ) : (
+                        <span className="text-sm text-muted-foreground">
+                          {d.dashboard.status[job.status] || job.status}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="min-w-0 space-y-3">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <p className="text-sm text-muted-foreground">
+                            {job.project?.name || d.dashboard.noDescription}
+                          </p>
+                          <h3 className="mt-1 text-base font-medium">{label}</h3>
+                        </div>
+                        <StatusBadge
+                          labels={d.dashboard.status}
+                          status={job.status}
+                        />
+                      </div>
+
+                      <p className="max-h-[4.5rem] overflow-hidden text-sm leading-6 text-muted-foreground">
+                        {job.prompt}
+                      </p>
+
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        <span>
+                          {d.dashboard.recycleBinDeletedAt(
+                            formatDate(job.updated_at, language),
+                          )}
+                        </span>
+                        <span>
+                          {d.dashboard.recycleBinRetention(
+                            getRecycleBinDaysLeft(job.updated_at),
+                          )}
+                        </span>
+                        <span>{job.credits_spent} Credits</span>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        {job.public_url ? (
+                          <Button
+                            asChild
+                            size="sm"
+                            title={d.dashboard.viewGeneratedImage}
+                            variant="outline"
+                          >
+                            <Link
+                              href={job.public_url}
+                              rel="noreferrer"
+                              target="_blank"
+                            >
+                              <Eye aria-hidden="true" />
+                              {d.dashboard.view}
+                            </Link>
+                          </Button>
+                        ) : null}
+                        <Button
+                          onClick={() => void copyPrompt(job)}
+                          size="sm"
+                          title={d.common.copy}
+                          type="button"
+                          variant="outline"
+                        >
+                          <Copy aria-hidden="true" />
+                          {d.common.copy}
+                        </Button>
+                        <Button
+                          disabled={Boolean(busyJob)}
+                          onClick={() => void restoreImageJob(job)}
+                          size="sm"
+                          title={d.dashboard.restore}
+                          type="button"
+                          variant="outline"
+                        >
+                          {isRestoring ? (
+                            <Loader2
+                              aria-hidden="true"
+                              className="animate-spin"
+                            />
+                          ) : (
+                            <RefreshCw aria-hidden="true" />
+                          )}
+                          {d.dashboard.restore}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="rounded-lg border bg-card p-8 text-center">
+            <h3 className="text-base font-medium">
+              {d.dashboard.recycleBinEmpty}
+            </h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {d.dashboard.recycleBinDescription}
+            </p>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between gap-3">
+          <Button
+            disabled={recyclePage <= 1 || isPending}
+            onClick={() => navigate(pageUrls.recyclePrevious)}
+            type="button"
+            variant="outline"
+          >
+            {d.common.previousPage}
+          </Button>
+          <Button
+            disabled={recyclePage >= recyclePageCount || isPending}
+            onClick={() => navigate(pageUrls.recycleNext)}
             type="button"
             variant="outline"
           >

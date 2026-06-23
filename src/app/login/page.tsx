@@ -3,6 +3,8 @@ import Link from "next/link";
 import { signInWithEmail } from "@/app/auth/actions";
 import { AuthMessage, getAuthMessage } from "@/app/auth/auth-message";
 import { Button } from "@/components/ui/button";
+import { getDictionary } from "@/lib/i18n";
+import { getCurrentLanguage } from "@/lib/i18n-server";
 
 type LoginPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -10,16 +12,19 @@ type LoginPageProps = {
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const { error, message } = await getAuthMessage(searchParams);
+  const dictionary = getDictionary(await getCurrentLanguage());
 
   return (
     <section className="mx-auto grid max-w-md gap-6 py-8">
       <div className="space-y-2">
         <p className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
-          Welcome back
+          {dictionary.auth.loginEyebrow}
         </p>
-        <h1 className="text-3xl font-semibold tracking-tight">Log in</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">
+          {dictionary.auth.login}
+        </h1>
         <p className="text-sm leading-6 text-muted-foreground">
-          Use your email and password to access your account.
+          {dictionary.auth.loginDescription}
         </p>
       </div>
 
@@ -28,7 +33,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           <AuthMessage error={error} message={message} />
           <div className="space-y-2">
             <label className="text-sm font-medium" htmlFor="email">
-              Email
+              {dictionary.auth.email}
             </label>
             <input
               autoComplete="email"
@@ -43,13 +48,13 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-3">
               <label className="text-sm font-medium" htmlFor="password">
-                Password
+                {dictionary.auth.password}
               </label>
               <Link
                 className="text-sm text-muted-foreground hover:text-foreground"
                 href="/forgot-password"
               >
-                Forgot password?
+                {dictionary.auth.forgotPassword}
               </Link>
             </div>
             <input
@@ -62,15 +67,15 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             />
           </div>
           <Button className="w-full" type="submit">
-            Log in
+            {dictionary.auth.login}
           </Button>
         </form>
       </div>
 
       <p className="text-center text-sm text-muted-foreground">
-        No account?{" "}
+        {dictionary.auth.noAccount}{" "}
         <Link className="font-medium text-foreground" href="/register">
-          Create one
+          {dictionary.auth.createAccount}
         </Link>
       </p>
     </section>

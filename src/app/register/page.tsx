@@ -3,6 +3,8 @@ import Link from "next/link";
 import { signUp } from "@/app/auth/actions";
 import { AuthMessage, getAuthMessage } from "@/app/auth/auth-message";
 import { Button } from "@/components/ui/button";
+import { getDictionary } from "@/lib/i18n";
+import { getCurrentLanguage } from "@/lib/i18n-server";
 
 type RegisterPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -12,16 +14,19 @@ export default async function RegisterPage({
   searchParams,
 }: RegisterPageProps) {
   const { error, message } = await getAuthMessage(searchParams);
+  const dictionary = getDictionary(await getCurrentLanguage());
 
   return (
     <section className="mx-auto grid max-w-md gap-6 py-8">
       <div className="space-y-2">
         <p className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
-          Get started
+          {dictionary.auth.registerEyebrow}
         </p>
-        <h1 className="text-3xl font-semibold tracking-tight">Create account</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">
+          {dictionary.auth.createAccount}
+        </h1>
         <p className="text-sm leading-6 text-muted-foreground">
-          Register with your email and password.
+          {dictionary.auth.registerDescription}
         </p>
       </div>
 
@@ -30,7 +35,7 @@ export default async function RegisterPage({
           <AuthMessage error={error} message={message} />
           <div className="space-y-2">
             <label className="text-sm font-medium" htmlFor="email">
-              Email
+              {dictionary.auth.email}
             </label>
             <input
               autoComplete="email"
@@ -44,7 +49,7 @@ export default async function RegisterPage({
           </div>
           <div className="space-y-2">
             <label className="text-sm font-medium" htmlFor="password">
-              Password
+              {dictionary.auth.password}
             </label>
             <input
               autoComplete="new-password"
@@ -57,15 +62,15 @@ export default async function RegisterPage({
             />
           </div>
           <Button className="w-full" type="submit">
-            Create account
+            {dictionary.auth.createAccount}
           </Button>
         </form>
       </div>
 
       <p className="text-center text-sm text-muted-foreground">
-        Already have an account?{" "}
+        {dictionary.auth.alreadyHaveAccount}{" "}
         <Link className="font-medium text-foreground" href="/login">
-          Log in
+          {dictionary.auth.login}
         </Link>
       </p>
     </section>

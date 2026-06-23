@@ -3,6 +3,8 @@ import Link from "next/link";
 import { requestPasswordReset } from "@/app/auth/actions";
 import { AuthMessage, getAuthMessage } from "@/app/auth/auth-message";
 import { Button } from "@/components/ui/button";
+import { getDictionary } from "@/lib/i18n";
+import { getCurrentLanguage } from "@/lib/i18n-server";
 
 type ForgotPasswordPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -12,16 +14,19 @@ export default async function ForgotPasswordPage({
   searchParams,
 }: ForgotPasswordPageProps) {
   const { error, message } = await getAuthMessage(searchParams);
+  const dictionary = getDictionary(await getCurrentLanguage());
 
   return (
     <section className="mx-auto grid max-w-md gap-6 py-8">
       <div className="space-y-2">
         <p className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
-          Account recovery
+          {dictionary.auth.forgotPasswordEyebrow}
         </p>
-        <h1 className="text-3xl font-semibold tracking-tight">Reset password</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">
+          {dictionary.auth.forgotPasswordTitle}
+        </h1>
         <p className="text-sm leading-6 text-muted-foreground">
-          Enter your email and we will send a password reset link.
+          {dictionary.auth.forgotPasswordDescription}
         </p>
       </div>
 
@@ -29,7 +34,7 @@ export default async function ForgotPasswordPage({
         <AuthMessage error={error} message={message} />
         <div className="space-y-2">
           <label className="text-sm font-medium" htmlFor="email">
-            Email
+            {dictionary.auth.email}
           </label>
           <input
             autoComplete="email"
@@ -42,14 +47,14 @@ export default async function ForgotPasswordPage({
           />
         </div>
         <Button className="w-full" type="submit">
-          Send reset link
+          {dictionary.auth.sendResetLink}
         </Button>
       </form>
 
       <p className="text-center text-sm text-muted-foreground">
-        Remembered it?{" "}
+        {dictionary.auth.forgotPasswordRemembered}{" "}
         <Link className="font-medium text-foreground" href="/login">
-          Back to login
+          {dictionary.auth.backToLogin}
         </Link>
       </p>
     </section>

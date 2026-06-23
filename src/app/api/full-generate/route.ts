@@ -78,6 +78,28 @@ function imageToResponse(
   };
 }
 
+async function mapWithConcurrency<TItem, TResult>(
+  items: TItem[],
+  limit: number,
+  worker: (item: TItem, index: number) => Promise<TResult>,
+) {
+  const results: TResult[] = Array.from({ length: items.length });
+  let nextIndex = 0;
+  const workerCount = Math.min(Math.max(limit, 1), items.length);
+
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (nextIndex < items.length) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+        results[currentIndex] = await worker(items[currentIndex], currentIndex);
+      }
+    }),
+  );
+
+  return results;
+}
+
 async function createWorkflowProject(supabase: SupabaseClient, userId: string) {
   const { data, error } = await supabase
     .from("projects")
@@ -414,12 +436,13 @@ export async function POST(request: Request) {
       { imageType: "lifestyle", prompt: prompts.lifestylePrompt },
       { imageType: "infographic", prompt: prompts.infographicPrompt },
     ];
+    const workflowProjectId = projectId;
 
-    for (const plan of imagePlans) {
+    await mapWithConcurrency(imagePlans, 2, async (plan) => {
       await appendWorkflowLog({
         supabase,
         userId: user.id,
-        projectId,
+        projectId: workflowProjectId,
         step: `queue_${plan.imageType}`,
         status: "started",
         message: `Queueing ${plan.imageType} generation job.`,
@@ -427,7 +450,7 @@ export async function POST(request: Request) {
       const queuedJob = await queueImageGenerationJob({
         supabase,
         userId: user.id,
-        projectId,
+        projectId: workflowProjectId,
         imageType: plan.imageType,
         prompt: plan.prompt,
         platform,
@@ -436,7 +459,7 @@ export async function POST(request: Request) {
       await appendWorkflowLog({
         supabase,
         userId: user.id,
-        projectId,
+        projectId: workflowProjectId,
         step: `queue_${plan.imageType}`,
         status: "completed",
         message: `${plan.imageType} generation job queued.`,
@@ -446,7 +469,7 @@ export async function POST(request: Request) {
       await appendWorkflowLog({
         supabase,
         userId: user.id,
-        projectId,
+        projectId: workflowProjectId,
         step: `generate_${plan.imageType}`,
         status: "started",
         message: `Generating ${plan.imageType} image.`,
@@ -461,7 +484,7 @@ export async function POST(request: Request) {
       await appendWorkflowLog({
         supabase,
         userId: user.id,
-        projectId,
+        projectId: workflowProjectId,
         step: `generate_${plan.imageType}`,
         status: "completed",
         message: `${plan.imageType} image generated.`,
@@ -470,7 +493,7 @@ export async function POST(request: Request) {
           public_url: completedJob.public_url || null,
         },
       });
-    }
+    });
 
     const creditBalance = await getUserCreditBalance(supabase, user.id);
     await updateWorkflowProject({

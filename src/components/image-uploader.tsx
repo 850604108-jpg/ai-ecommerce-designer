@@ -19,8 +19,16 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 
+import { useBackgroundGeneration } from "@/components/generation/background-generation-provider";
 import { useLanguage } from "@/components/i18n/language-provider";
 import { Button } from "@/components/ui/button";
+import {
+  downloadImageAsset,
+  downloadImageBatch,
+  imageDownloadFormats,
+  type DownloadableImage,
+  type ImageDownloadFormat,
+} from "@/lib/download-images";
 import {
   ecommercePlatforms,
   type EcommercePlatform,
@@ -46,7 +54,6 @@ const allowedTypes = new Set([
 
 const allowedExtensions = new Set(["jpg", "jpeg", "png", "webp"]);
 const promptGenerationCreditCost = 3;
-
 type UploadResult = {
   imageUrl: string;
   recognition?: ProductRecognitionResult;
@@ -87,6 +94,41 @@ type DetailGenerationMode = "modules" | "long";
 type ReferenceStyleImage = {
   fileName: string;
   imageUrl: string;
+};
+type ImagePreviewState = {
+  alt: string;
+  src: string;
+};
+type ImageUploaderGenerationDraft = {
+  customRequirement: string;
+  detailAspect: (typeof detailAspectOptions)[number]["value"];
+  detailEndId: string;
+  detailGenerationMode: DetailGenerationMode;
+  detailPageExportError: string;
+  detailPageExportStatus: ExportState;
+  detailStartId: string;
+  error: string;
+  generatedImageJobs: GeneratedImageJob[];
+  generationMode: GenerationMode;
+  imageQueueError: string;
+  imageQueueStatus: ImageQueueState;
+  isGenerationPanelMinimized: boolean;
+  listingImageCount: number;
+  listingImageRoles: ListingImageRole[];
+  previewUrl: string;
+  progress: number;
+  promptError: string;
+  promptStatus: PromptState;
+  prompts: PromptEngineOutput | null;
+  recognitionStatus: RecognitionState;
+  referenceImageNotes: string;
+  referenceInfluence: number;
+  referenceStyleError: string;
+  referenceStyleImage: ReferenceStyleImage | null;
+  referenceStyleUploadStatus: UploadState;
+  result: UploadResult | null;
+  selectedPlatform: EcommercePlatform;
+  status: UploadState;
 };
 
 const listingImageCountOptions = [1, 2, 3, 4, 5, 6, 7] as const;
@@ -585,6 +627,16 @@ function sortGeneratedImageJobs(jobs: GeneratedImageJob[]) {
   });
 }
 
+function hasPendingGeneratedJobs(jobs: GeneratedImageJob[]) {
+  return jobs.some(
+    (job) => job.status === "queued" || job.status === "processing",
+  );
+}
+
+function hasFailedGeneratedJobs(jobs: GeneratedImageJob[]) {
+  return jobs.some((job) => job.status === "failed");
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => {
     window.setTimeout(resolve, ms);
@@ -830,6 +882,15 @@ export function ImageUploader({
   isAuthenticated: boolean;
 }) {
   const { dictionary } = useLanguage();
+  const {
+    clearGenerationDraft,
+    clearProgress: clearBackgroundProgress,
+    generationDraft: backgroundGenerationDraft,
+    minimize: minimizeBackgroundGeneration,
+    progress: backgroundGenerationProgress,
+    updateGenerationDraft,
+    updateProgress: updateBackgroundProgress,
+  } = useBackgroundGeneration();
   const inputId = useId();
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
@@ -866,6 +927,8 @@ export function ImageUploader({
   const [prompts, setPrompts] = useState<PromptEngineOutput | null>(null);
   const [imageQueueStatus, setImageQueueStatus] =
     useState<ImageQueueState>("idle");
+  const [isGenerationPanelMinimized, setIsGenerationPanelMinimized] =
+    useState(false);
   const [imageQueueError, setImageQueueError] = useState("");
   const [generatedImageJobs, setGeneratedImageJobs] = useState<
     GeneratedImageJob[]
@@ -873,11 +936,139 @@ export function ImageUploader({
   const [detailPageExportStatus, setDetailPageExportStatus] =
     useState<ExportState>("idle");
   const [detailPageExportError, setDetailPageExportError] = useState("");
+  const [downloadFormat, setDownloadFormat] =
+    useState<ImageDownloadFormat>("original");
+  const [downloadError, setDownloadError] = useState("");
+  const [downloadingImageId, setDownloadingImageId] = useState<string | null>(
+    null,
+  );
+  const [isBatchDownloading, setIsBatchDownloading] = useState(false);
+  const [previewImage, setPreviewImage] = useState<ImagePreviewState | null>(
+    null,
+  );
   const [creditBalance, setCreditBalance] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const referenceStyleInputId = useId();
   const referenceStyleInputRef = useRef<HTMLInputElement>(null);
+  const hasRestoredGenerationDraftRef = useRef(false);
+
+  useEffect(() => {
+    if (hasRestoredGenerationDraftRef.current) {
+      return;
+    }
+
+    hasRestoredGenerationDraftRef.current = true;
+
+    if (!backgroundGenerationDraft) {
+      return;
+    }
+
+    const draft = backgroundGenerationDraft as ImageUploaderGenerationDraft;
+
+    setPreviewUrl(draft.previewUrl || draft.result?.imageUrl || "");
+    setStatus(draft.status || "idle");
+    setProgress(draft.progress || 0);
+    setResult(draft.result || null);
+    setError(draft.error || "");
+    setRecognitionStatus(draft.recognitionStatus || "idle");
+    setPromptStatus(draft.promptStatus || "idle");
+    setPromptError(draft.promptError || "");
+    setSelectedPlatform(draft.selectedPlatform || "taobao");
+    setGenerationMode(draft.generationMode || "main");
+    setDetailGenerationMode(draft.detailGenerationMode || "modules");
+    setListingImageCount(draft.listingImageCount || 5);
+    setListingImageRoles(
+      draft.listingImageRoles?.length
+        ? draft.listingImageRoles
+        : defaultListingImageRoles.slice(0, 5),
+    );
+    setReferenceImageNotes(draft.referenceImageNotes || "");
+    setReferenceStyleImage(draft.referenceStyleImage || null);
+    setReferenceStyleUploadStatus(draft.referenceStyleUploadStatus || "idle");
+    setReferenceStyleError(draft.referenceStyleError || "");
+    setReferenceInfluence(draft.referenceInfluence ?? 30);
+    setCustomRequirement(draft.customRequirement || "");
+    setDetailStartId(draft.detailStartId || "AD-01");
+    setDetailEndId(draft.detailEndId || "AD-06");
+    setDetailAspect(draft.detailAspect || "wide");
+    setPrompts(draft.prompts || null);
+    setImageQueueStatus(draft.imageQueueStatus || "idle");
+    setIsGenerationPanelMinimized(draft.isGenerationPanelMinimized || false);
+    setImageQueueError(draft.imageQueueError || "");
+    setGeneratedImageJobs(draft.generatedImageJobs || []);
+    setDetailPageExportStatus(draft.detailPageExportStatus || "idle");
+    setDetailPageExportError(draft.detailPageExportError || "");
+  }, [backgroundGenerationDraft]);
+
+  useEffect(() => {
+    if (!hasRestoredGenerationDraftRef.current) {
+      return;
+    }
+
+    updateGenerationDraft({
+      customRequirement,
+      detailAspect,
+      detailEndId,
+      detailGenerationMode,
+      detailPageExportError,
+      detailPageExportStatus,
+      detailStartId,
+      error,
+      generatedImageJobs,
+      generationMode,
+      imageQueueError,
+      imageQueueStatus,
+      isGenerationPanelMinimized,
+      listingImageCount,
+      listingImageRoles,
+      previewUrl: previewUrl || result?.imageUrl || "",
+      progress,
+      promptError,
+      promptStatus,
+      prompts,
+      recognitionStatus,
+      referenceImageNotes,
+      referenceInfluence,
+      referenceStyleError,
+      referenceStyleImage,
+      referenceStyleUploadStatus,
+      result,
+      selectedPlatform,
+      status,
+    } satisfies ImageUploaderGenerationDraft);
+  }, [
+    customRequirement,
+    detailAspect,
+    detailEndId,
+    detailGenerationMode,
+    detailPageExportError,
+    detailPageExportStatus,
+    detailStartId,
+    error,
+    generatedImageJobs,
+    generationMode,
+    imageQueueError,
+    imageQueueStatus,
+    isGenerationPanelMinimized,
+    listingImageCount,
+    listingImageRoles,
+    previewUrl,
+    progress,
+    promptError,
+    promptStatus,
+    prompts,
+    recognitionStatus,
+    referenceImageNotes,
+    referenceInfluence,
+    referenceStyleError,
+    referenceStyleImage,
+    referenceStyleUploadStatus,
+    result,
+    selectedPlatform,
+    status,
+    updateGenerationDraft,
+  ]);
 
   useEffect(() => {
     void loadCreditBalance()
@@ -887,7 +1078,7 @@ export function ImageUploader({
 
   useEffect(() => {
     if (!file) {
-      setPreviewUrl("");
+      setPreviewUrl(result?.imageUrl || "");
       return;
     }
 
@@ -897,9 +1088,147 @@ export function ImageUploader({
     return () => {
       URL.revokeObjectURL(nextPreviewUrl);
     };
-  }, [file]);
+  }, [file, result?.imageUrl]);
+
+  useEffect(() => {
+    if (!generatedImageJobs.length && imageQueueStatus === "idle") {
+      clearBackgroundProgress();
+      return;
+    }
+
+    const completed = generatedImageJobs.filter(
+      (job) => job.status === "completed",
+    ).length;
+    const failed = generatedImageJobs.filter(
+      (job) => job.status === "failed",
+    ).length;
+    const total =
+      generatedImageJobs.length ||
+      (generationMode === "detail" ? 1 : listingImageCount);
+    const activeJob = generatedImageJobs.find(
+      (job) => job.status === "processing" || job.status === "queued",
+    );
+
+    updateBackgroundProgress({
+      activeLabel: activeJob
+        ? `${dictionary.common.processing}: ${
+            getJobModuleId(activeJob) || dictionary.imageUploader.generating
+          }`
+        : imageQueueStatus === "success"
+          ? dictionary.backgroundGeneration.completed
+          : "",
+      completed,
+      failed,
+      href: "/generate#generation-workspace",
+      isMinimized: isGenerationPanelMinimized,
+      label:
+        generationMode === "detail"
+          ? dictionary.imageUploader.detailPage
+          : dictionary.imageUploader.listingImageSet,
+      status: imageQueueStatus,
+      total,
+    });
+  }, [
+    clearBackgroundProgress,
+    generatedImageJobs,
+    generationMode,
+    imageQueueStatus,
+    isGenerationPanelMinimized,
+    listingImageCount,
+    dictionary,
+    updateBackgroundProgress,
+  ]);
+
+  useEffect(() => {
+    if (!backgroundGenerationProgress.isMinimized && isGenerationPanelMinimized) {
+      setIsGenerationPanelMinimized(false);
+    }
+  }, [backgroundGenerationProgress.isMinimized, isGenerationPanelMinimized]);
+
+  useEffect(() => {
+    const shouldRefreshBackgroundJobs =
+      generatedImageJobs.length > 0 &&
+      (imageQueueStatus === "queueing" || imageQueueStatus === "processing") &&
+      hasPendingGeneratedJobs(generatedImageJobs);
+
+    if (!shouldRefreshBackgroundJobs) {
+      return;
+    }
+
+    let isActive = true;
+    let backgroundRefreshTimer: number | null = null;
+    const activeJobIds = generatedImageJobs.map((job) => job.id);
+
+    async function refreshBackgroundJobs() {
+      try {
+        const refreshedJobs = await refreshGeneratedImages(activeJobIds);
+
+        if (!isActive) {
+          return;
+        }
+
+        setGeneratedImageJobs(refreshedJobs);
+
+        if (hasPendingGeneratedJobs(refreshedJobs)) {
+          backgroundRefreshTimer = window.setTimeout(refreshBackgroundJobs, 3000);
+          return;
+        }
+
+        if (hasFailedGeneratedJobs(refreshedJobs)) {
+          setImageQueueStatus("error");
+          setImageQueueError(dictionary.imageUploader.partialGenerationFailed);
+        } else {
+          setImageQueueStatus("success");
+          setImageQueueError("");
+        }
+
+        void loadCreditBalance()
+          .then(setCreditBalance)
+          .catch(() => {});
+      } catch {
+        if (!isActive) {
+          return;
+        }
+
+        backgroundRefreshTimer = window.setTimeout(refreshBackgroundJobs, 5000);
+      }
+    }
+
+    void refreshBackgroundJobs();
+
+    return () => {
+      isActive = false;
+
+      if (backgroundRefreshTimer) {
+        window.clearTimeout(backgroundRefreshTimer);
+      }
+    };
+  }, [dictionary, generatedImageJobs, imageQueueStatus]);
+
+  useEffect(() => {
+    if (!previewImage) {
+      return;
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setPreviewImage(null);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [previewImage]);
+
+  function openImagePreview(image: ImagePreviewState) {
+    setPreviewImage(image);
+  }
 
   function selectFile(nextFile?: File) {
+    clearGenerationDraft();
     setResult(null);
     setProgress(0);
     setError("");
@@ -1363,7 +1692,7 @@ export function ImageUploader({
     const prompt = getListingPromptForJob(normalizePromptOutput(prompts), job);
 
     if (!prompt) {
-      setImageQueueError("未找到该图片对应的提示词，请先重新生成提示词。");
+      setImageQueueError(dictionary.imageUploader.promptMissingForImage);
       return;
     }
 
@@ -1407,6 +1736,7 @@ export function ImageUploader({
     }
 
     setImageQueueStatus("queueing");
+    setIsGenerationPanelMinimized(false);
     setImageQueueError("");
     setGeneratedImageJobs([]);
 
@@ -1455,7 +1785,7 @@ export function ImageUploader({
       if (failedCount) {
         setImageQueueStatus("error");
         setImageQueueError(
-          `${failedCount} 张副图生成失败，已保留在对应 AS 位置，可点击“重新生成此图”单独重试。`,
+          dictionary.imageUploader.listingGenerationFailed(failedCount),
         );
       } else {
         setImageQueueStatus("success");
@@ -1499,6 +1829,7 @@ export function ImageUploader({
     }
 
     setImageQueueStatus("queueing");
+    setIsGenerationPanelMinimized(false);
     setImageQueueError("");
     setDetailPageExportStatus("idle");
     setDetailPageExportError("");
@@ -1547,8 +1878,10 @@ export function ImageUploader({
       setGeneratedImageJobs(queuedJobs);
       setImageQueueStatus("processing");
 
-      await Promise.all(
-        queuedJobs.map(async (job) => {
+      const processedResults = await runWithConcurrency(
+        queuedJobs,
+        2,
+        async (job) => {
           upsertGeneratedImageJob({ ...job, status: "processing" });
           const processed = await processGeneratedImage(job.id);
 
@@ -1557,10 +1890,22 @@ export function ImageUploader({
           }
 
           upsertGeneratedImageJob(processed.job);
-        }),
+          return processed.job;
+        },
       );
 
-      setImageQueueStatus("success");
+      const failedCount = processedResults.filter(
+        (result) => result.status === "rejected",
+      ).length;
+
+      if (failedCount) {
+        setImageQueueStatus("error");
+        setImageQueueError(
+          dictionary.imageUploader.detailGenerationFailed(failedCount),
+        );
+      } else {
+        setImageQueueStatus("success");
+      }
     } catch (generationError) {
       setImageQueueStatus("error");
       setImageQueueError(
@@ -1637,6 +1982,72 @@ export function ImageUploader({
           ? exportError.message
           : dictionary.imageUploader.detailPageExportFailed,
       );
+    }
+  }
+
+  function getDownloadableGeneratedImages() {
+    return generatedImageJobs
+      .filter((job) => job.status === "completed" && Boolean(job.public_url))
+      .map(
+        (job) =>
+          ({
+            fileName: getGeneratedImageLabel(job),
+            url: job.public_url || "",
+          }) satisfies DownloadableImage,
+      );
+  }
+
+  async function handleDownloadGeneratedImage(job: GeneratedImageJob) {
+    if (!job.public_url) {
+      return;
+    }
+
+    setDownloadError("");
+    setDownloadingImageId(job.id);
+
+    try {
+      await downloadImageAsset(
+        {
+          fileName: getGeneratedImageLabel(job),
+          url: job.public_url,
+        },
+        downloadFormat,
+      );
+    } catch (downloadFailure) {
+      setDownloadError(
+        downloadFailure instanceof Error
+          ? downloadFailure.message
+          : dictionary.dashboard.downloadFailed,
+      );
+    } finally {
+      setDownloadingImageId(null);
+    }
+  }
+
+  async function handleBatchDownloadGeneratedImages() {
+    const images = getDownloadableGeneratedImages();
+
+    if (!images.length) {
+      return;
+    }
+
+    setDownloadError("");
+    setIsBatchDownloading(true);
+
+    try {
+      await downloadImageBatch({
+        archiveName: result?.recognition?.product_name || "generated-images",
+        format: downloadFormat,
+        images,
+      });
+    } catch (downloadFailure) {
+      setDownloadError(
+        downloadFailure instanceof Error
+          ? downloadFailure.message
+          : dictionary.dashboard.batchDownloadFailed,
+      );
+    } finally {
+      setIsBatchDownloading(false);
     }
   }
 
@@ -1725,15 +2136,25 @@ export function ImageUploader({
   const isMainMode = generationMode === "main";
   const isDetailMode = generationMode === "detail";
   const isLongDetailMode = detailGenerationMode === "long";
+  const canMinimizeGenerationPanel =
+    generatedImageJobs.length > 0 &&
+    (imageQueueStatus === "queueing" ||
+      imageQueueStatus === "processing" ||
+      imageQueueStatus === "error");
+  const downloadableGeneratedImageCount = generatedImageJobs.filter(
+    (job) => job.status === "completed" && Boolean(job.public_url),
+  ).length;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5" id="generation-workspace">
       <div className="rounded-lg border bg-card p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h2 className="text-base font-medium">生成设置</h2>
+            <h2 className="text-base font-medium">
+              {dictionary.imageUploader.generationSettings}
+            </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              先选择要生成的图片类型和规格，再上传图片识别商品信息。
+              {dictionary.imageUploader.generationSettingsDescription}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -1745,7 +2166,7 @@ export function ImageUploader({
               type="button"
               variant={isMainMode ? "default" : "outline"}
             >
-              副图
+              {dictionary.imageUploader.generationModeMain}
             </Button>
             <Button
               className={cn(
@@ -1755,7 +2176,7 @@ export function ImageUploader({
               type="button"
               variant={isDetailMode ? "default" : "outline"}
             >
-              详情页
+              {dictionary.imageUploader.generationModeDetail}
             </Button>
           </div>
         </div>
@@ -1765,13 +2186,15 @@ export function ImageUploader({
           <div className="rounded-md border p-3 lg:col-span-2">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h3 className="text-sm font-medium">Listing 图片套组</h3>
+                <h3 className="text-sm font-medium">
+                  {dictionary.imageUploader.listingImageSet}
+                </h3>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  AS-01 至 AS-07 均为副图，可分别选择角色；每张 2 Credits，比例 1:1。
+                  {dictionary.imageUploader.listingImageSetDescription}
                 </p>
               </div>
               <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                总张数
+                {dictionary.imageUploader.listingImageCount}
                   <select
                     className="h-8 rounded-md border bg-background px-2 text-sm text-foreground"
                     onChange={(event) =>
@@ -1815,7 +2238,7 @@ export function ImageUploader({
                     >
                       {listingImageRoleOptions.map((option) => (
                         <option key={option.value} value={option.value}>
-                          {option.label}
+                          {dictionary.imageUploader.roleLabels[option.value]}
                         </option>
                       ))}
                     </select>
@@ -1825,7 +2248,7 @@ export function ImageUploader({
             </div>
             <div className="mt-4 grid gap-3">
               <label className="grid gap-1 text-xs text-muted-foreground">
-                参考图影响比例：{referenceInfluence}%
+                {dictionary.imageUploader.referenceInfluence(referenceInfluence)}
                 <input
                   className="w-full"
                   max={80}
@@ -1839,7 +2262,7 @@ export function ImageUploader({
                 />
               </label>
               <div className="grid gap-2 text-xs text-muted-foreground">
-                <span>参考风格图</span>
+                <span>{dictionary.imageUploader.referenceStyle}</span>
                 <input
                   accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
                   className="sr-only"
@@ -1852,12 +2275,14 @@ export function ImageUploader({
                 />
                 <div className="flex flex-wrap items-center gap-2">
                   <Button asChild size="sm" variant="outline">
-                    <label htmlFor={referenceStyleInputId}>上传参考图</label>
+                    <label htmlFor={referenceStyleInputId}>
+                      {dictionary.imageUploader.uploadReference}
+                    </label>
                   </Button>
                   {referenceStyleUploadStatus === "uploading" ? (
                     <span className="inline-flex items-center gap-1 text-foreground">
                       <Loader2 aria-hidden="true" className="size-3 animate-spin" />
-                      上传中...
+                      {dictionary.imageUploader.uploading}
                     </span>
                   ) : null}
                   {referenceStyleImage ? (
@@ -1871,11 +2296,11 @@ export function ImageUploader({
                         type="button"
                         variant="outline"
                       >
-                        移除
+                        {dictionary.imageUploader.remove}
                       </Button>
                     </>
                   ) : (
-                    <span>未上传时按平台默认风格生成。</span>
+                    <span>{dictionary.imageUploader.referenceStyleFallback}</span>
                   )}
                 </div>
                 {referenceStyleError ? (
@@ -1885,11 +2310,11 @@ export function ImageUploader({
                 ) : null}
               </div>
               <label className="grid gap-1 text-xs text-muted-foreground">
-                简短要求
+                {dictionary.imageUploader.requirement}
                 <input
                   className="h-9 rounded-md border bg-background px-3 text-sm text-foreground"
                   onChange={(event) => updateCustomRequirement(event.target.value)}
-                  placeholder="例如：整体更清爽、减少文字、偏高端质感"
+                  placeholder={dictionary.imageUploader.requirementPlaceholder}
                   value={customRequirement}
                 />
               </label>
@@ -1901,9 +2326,11 @@ export function ImageUploader({
           <div className="rounded-md border p-3 lg:col-span-2">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h3 className="text-sm font-medium">详情页生成</h3>
+                <h3 className="text-sm font-medium">
+                  {dictionary.imageUploader.detailPage}
+                </h3>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  可生成 AD 模块组，也可单独生成一张完整 9:32 详情页长图。
+                  {dictionary.imageUploader.detailPageOptionsDescription}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -1913,7 +2340,7 @@ export function ImageUploader({
                   type="button"
                   variant={detailGenerationMode === "modules" ? "default" : "outline"}
                 >
-                  AD 模块
+                  {dictionary.imageUploader.detailGenerationModeModules}
                 </Button>
                 <Button
                   onClick={() => setDetailGenerationMode("long")}
@@ -1921,7 +2348,7 @@ export function ImageUploader({
                   type="button"
                   variant={detailGenerationMode === "long" ? "default" : "outline"}
                 >
-                  9:32 长图
+                  {dictionary.imageUploader.detailGenerationModeLong}
                 </Button>
               </div>
             </div>
@@ -1929,7 +2356,7 @@ export function ImageUploader({
             {detailGenerationMode === "modules" ? (
               <div className="flex flex-wrap items-center gap-2">
                 <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                  从
+                  {dictionary.imageUploader.detailRangeFrom}
                   <select
                     className="h-8 rounded-md border bg-background px-2 text-sm text-foreground"
                     onChange={(event) => {
@@ -1952,7 +2379,7 @@ export function ImageUploader({
                   </select>
                 </label>
                 <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                  到
+                  {dictionary.imageUploader.detailRangeTo}
                   <select
                     className="h-8 rounded-md border bg-background px-2 text-sm text-foreground"
                     onChange={(event) => {
@@ -1982,14 +2409,14 @@ export function ImageUploader({
                 >
                   {detailAspectOptions.map((option) => (
                     <option key={option.value} value={option.value}>
-                      {option.label}
+                      {dictionary.imageUploader.aspectLabels[option.value]}
                     </option>
                   ))}
                 </select>
               </div>
             ) : (
               <p className="mt-3 rounded-md bg-secondary p-3 text-xs leading-5 text-muted-foreground">
-                9:32 长图会作为独立生成任务，只生成一张完整详情页长图，提示词按 Amazon A+/详情页完整页面结构组织。
+                {dictionary.imageUploader.detailPageLongDescription}
               </p>
             )}
             </div>
@@ -2221,7 +2648,7 @@ export function ImageUploader({
                         type="button"
                         variant="outline"
                       >
-                        添加
+                        {dictionary.imageUploader.add}
                       </Button>
                     </div>
                     <div className="grid gap-2">
@@ -2235,7 +2662,9 @@ export function ImageUploader({
                                 event.target.value,
                               )
                             }
-                            placeholder={`卖点 ${index + 1}`}
+                            placeholder={dictionary.imageUploader.highlightPlaceholder(
+                              index + 1,
+                            )}
                             value={highlight}
                           />
                           <Button
@@ -2244,7 +2673,7 @@ export function ImageUploader({
                             type="button"
                             variant="outline"
                           >
-                            移除
+                            {dictionary.imageUploader.remove}
                           </Button>
                         </div>
                       ))}
@@ -2352,6 +2781,61 @@ export function ImageUploader({
                             </h4>
                           </div>
                           <div className="flex flex-wrap items-center gap-2">
+                            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                              {dictionary.dashboard.downloadFormat}
+                              <select
+                                className="h-9 rounded-md border bg-background px-2 text-sm text-foreground"
+                                onChange={(event) =>
+                                  setDownloadFormat(
+                                    event.target.value as ImageDownloadFormat,
+                                  )
+                                }
+                                value={downloadFormat}
+                              >
+                                {imageDownloadFormats.map((format) => (
+                                  <option key={format} value={format}>
+                                    {format === "original"
+                                      ? dictionary.dashboard.originalFormat
+                                      : format.toUpperCase()}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <Button
+                              disabled={
+                                !downloadableGeneratedImageCount ||
+                                isBatchDownloading
+                              }
+                              onClick={() =>
+                                void handleBatchDownloadGeneratedImages()
+                              }
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                            >
+                              {isBatchDownloading ? (
+                                <Loader2
+                                  aria-hidden="true"
+                                  className="animate-spin"
+                                />
+                              ) : (
+                                <Download aria-hidden="true" />
+                              )}
+                              {dictionary.imageUploader.batchDownload}
+                            </Button>
+                            {canMinimizeGenerationPanel ? (
+                              <Button
+                                onClick={() => {
+                                  setIsGenerationPanelMinimized(true);
+                                  minimizeBackgroundGeneration();
+                                }}
+                                size="sm"
+                                type="button"
+                                variant="outline"
+                              >
+                                {dictionary.imageUploader.minimizeToProgress}
+                              </Button>
+                            ) : null}
                             <Button
                               disabled={
                                 !isMainMode ||
@@ -2372,25 +2856,37 @@ export function ImageUploader({
                               ) : (
                                 <WandSparkles aria-hidden="true" />
                               )}
-                              副图套组 1:1 · {mainImageCreditCost} Credits
+                              {dictionary.imageUploader.listingSetGenerate(
+                                mainImageCreditCost,
+                              )}
                             </Button>
                           </div>
                         </div>
 
-                        {imageQueueStatus === "queueing" ? (
+                        {isGenerationPanelMinimized ? (
+                          <p className="mt-4 rounded-md bg-secondary p-3 text-sm text-muted-foreground">
+                            {dictionary.imageUploader.minimizedNotice}
+                          </p>
+                        ) : null}
+
+                        {!isGenerationPanelMinimized &&
+                        imageQueueStatus === "queueing" ? (
                           <div className="mt-4 flex items-center gap-2 rounded-md bg-secondary p-3 text-sm">
                             <Clock3 aria-hidden="true" className="size-4" />
                             {dictionary.imageUploader.queueing}
                           </div>
                         ) : null}
 
-                        {isMainMode && !canAffordMainImages ? (
+                        {!isGenerationPanelMinimized &&
+                        isMainMode &&
+                        !canAffordMainImages ? (
                           <p className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-                            剩余积分不足，请减少生成数量或先补充积分。
+                            {dictionary.imageUploader.insufficientCreditsAdjust}
                           </p>
                         ) : null}
 
-                        {imageQueueStatus === "processing" ? (
+                        {!isGenerationPanelMinimized &&
+                        imageQueueStatus === "processing" ? (
                           <div className="mt-4 flex items-center gap-2 rounded-md bg-secondary p-3 text-sm">
                             <Loader2
                               aria-hidden="true"
@@ -2400,7 +2896,8 @@ export function ImageUploader({
                           </div>
                         ) : null}
 
-                        {imageQueueStatus === "success" ? (
+                        {!isGenerationPanelMinimized &&
+                        imageQueueStatus === "success" ? (
                           <div className="mt-4 flex items-center gap-2 rounded-md border border-green-600/30 bg-green-50 p-3 text-sm text-green-700">
                             <CheckCircle2
                               aria-hidden="true"
@@ -2410,7 +2907,7 @@ export function ImageUploader({
                           </div>
                         ) : null}
 
-                        {imageQueueError ? (
+                        {!isGenerationPanelMinimized && imageQueueError ? (
                           <div className="mt-4 space-y-3 rounded-md border border-destructive/30 bg-destructive/10 p-3">
                             <p className="text-sm text-destructive">
                               {imageQueueError}
@@ -2433,7 +2930,13 @@ export function ImageUploader({
                           </div>
                         ) : null}
 
-                        {generatedImageJobs.length ? (
+                        {!isGenerationPanelMinimized && downloadError ? (
+                          <p className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                            {downloadError}
+                          </p>
+                        ) : null}
+
+                        {!isGenerationPanelMinimized && generatedImageJobs.length ? (
                           <div className="mt-4 grid gap-3">
                             {generatedImageJobs.map((job) => (
                               <div
@@ -2488,8 +2991,8 @@ export function ImageUploader({
                                   normalizePromptOutput(prompts),
                                   job,
                                 ) ? (
+                                  <div className="mb-3 flex flex-wrap gap-2">
                                   <Button
-                                    className="mb-3"
                                     disabled={
                                       imageQueueStatus === "queueing" ||
                                       imageQueueStatus === "processing"
@@ -2502,20 +3005,57 @@ export function ImageUploader({
                                     variant="outline"
                                   >
                                     <RefreshCw aria-hidden="true" />
-                                    重新生成此图
+                                    {dictionary.imageUploader.regenerateThisImage}
                                   </Button>
+                                  <Button
+                                    disabled={
+                                      job.status !== "completed" ||
+                                      !job.public_url ||
+                                      downloadingImageId === job.id
+                                    }
+                                    onClick={() =>
+                                      void handleDownloadGeneratedImage(job)
+                                    }
+                                    size="sm"
+                                    type="button"
+                                    variant="outline"
+                                  >
+                                    {downloadingImageId === job.id ? (
+                                      <Loader2
+                                        aria-hidden="true"
+                                        className="animate-spin"
+                                      />
+                                    ) : (
+                                      <Download aria-hidden="true" />
+                                    )}
+                                    {dictionary.dashboard.download}
+                                  </Button>
+                                  </div>
                                 ) : null}
 
                                 {job.public_url && job.status === "completed" ? (
-                                  <Image
-                                    alt={dictionary.imageUploader.generatedImageAlt(
-                                      getGeneratedImageLabel(job),
-                                    )}
-                                    className="max-h-80 w-full rounded-md object-contain"
-                                    height={320}
-                                    src={job.public_url}
-                                    width={512}
-                                  />
+                                  <button
+                                    className="block w-full cursor-zoom-in rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                                    onClick={() =>
+                                      openImagePreview({
+                                        alt: dictionary.imageUploader.generatedImageAlt(
+                                          getGeneratedImageLabel(job),
+                                        ),
+                                        src: job.public_url || "",
+                                      })
+                                    }
+                                    type="button"
+                                  >
+                                    <Image
+                                      alt={dictionary.imageUploader.generatedImageAlt(
+                                        getGeneratedImageLabel(job),
+                                      )}
+                                      className="max-h-80 w-full rounded-md object-contain"
+                                      height={320}
+                                      src={job.public_url}
+                                      width={512}
+                                    />
+                                  </button>
                                 ) : null}
 
                                 {job.error_message ? (
@@ -2542,6 +3082,61 @@ export function ImageUploader({
                             </p>
                           </div>
                           <div className="flex flex-wrap items-center gap-2">
+                            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                              {dictionary.dashboard.downloadFormat}
+                              <select
+                                className="h-9 rounded-md border bg-background px-2 text-sm text-foreground"
+                                onChange={(event) =>
+                                  setDownloadFormat(
+                                    event.target.value as ImageDownloadFormat,
+                                  )
+                                }
+                                value={downloadFormat}
+                              >
+                                {imageDownloadFormats.map((format) => (
+                                  <option key={format} value={format}>
+                                    {format === "original"
+                                      ? dictionary.dashboard.originalFormat
+                                      : format.toUpperCase()}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <Button
+                              disabled={
+                                !downloadableGeneratedImageCount ||
+                                isBatchDownloading
+                              }
+                              onClick={() =>
+                                void handleBatchDownloadGeneratedImages()
+                              }
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                            >
+                              {isBatchDownloading ? (
+                                <Loader2
+                                  aria-hidden="true"
+                                  className="animate-spin"
+                                />
+                              ) : (
+                                <Download aria-hidden="true" />
+                              )}
+                              {dictionary.imageUploader.batchDownload}
+                            </Button>
+                            {canMinimizeGenerationPanel ? (
+                              <Button
+                                onClick={() => {
+                                  setIsGenerationPanelMinimized(true);
+                                  minimizeBackgroundGeneration();
+                                }}
+                                size="sm"
+                                type="button"
+                                variant="outline"
+                              >
+                                {dictionary.imageUploader.minimizeToProgress}
+                              </Button>
+                            ) : null}
                             <Button
                               disabled={
                                 !isDetailMode ||
@@ -2595,6 +3190,13 @@ export function ImageUploader({
                           </div>
                         </div>
 
+                        {isGenerationPanelMinimized ? (
+                          <p className="mt-4 rounded-md bg-secondary p-3 text-sm text-muted-foreground">
+                            {dictionary.imageUploader.minimizedNotice}
+                          </p>
+                        ) : null}
+
+                        {!isGenerationPanelMinimized ? (
                         <div className="mt-4 grid gap-3">
                           {isDetailMode && !canAffordDetailPage ? (
                             <p className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
@@ -2654,6 +3256,12 @@ export function ImageUploader({
                             </div>
                           ) : null}
 
+                          {downloadError ? (
+                            <p className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                              {downloadError}
+                            </p>
+                          ) : null}
+
                           {isLongDetailMode && generatedImageJobs.length ? (
                             <div className="grid gap-3">
                               {generatedImageJobs.map((job) => (
@@ -2693,15 +3301,50 @@ export function ImageUploader({
 
                                   {job.public_url &&
                                   job.status === "completed" ? (
-                                    <Image
-                                      alt={dictionary.imageUploader.generatedImageAlt(
-                                        getGeneratedImageLabel(job),
-                                      )}
-                                      className="max-h-80 w-full rounded-md object-contain"
-                                      height={320}
-                                      src={job.public_url}
-                                      width={512}
-                                    />
+                                    <>
+                                      <Button
+                                        className="mb-3"
+                                        disabled={downloadingImageId === job.id}
+                                        onClick={() =>
+                                          void handleDownloadGeneratedImage(job)
+                                        }
+                                        size="sm"
+                                        type="button"
+                                        variant="outline"
+                                      >
+                                        {downloadingImageId === job.id ? (
+                                          <Loader2
+                                            aria-hidden="true"
+                                            className="animate-spin"
+                                          />
+                                        ) : (
+                                          <Download aria-hidden="true" />
+                                        )}
+                                        {dictionary.dashboard.download}
+                                      </Button>
+                                      <button
+                                        className="block w-full cursor-zoom-in rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                                        onClick={() =>
+                                          openImagePreview({
+                                            alt: dictionary.imageUploader.generatedImageAlt(
+                                              getGeneratedImageLabel(job),
+                                            ),
+                                            src: job.public_url || "",
+                                          })
+                                        }
+                                        type="button"
+                                      >
+                                        <Image
+                                          alt={dictionary.imageUploader.generatedImageAlt(
+                                            getGeneratedImageLabel(job),
+                                          )}
+                                          className="max-h-80 w-full rounded-md object-contain"
+                                          height={320}
+                                          src={job.public_url}
+                                          width={512}
+                                        />
+                                      </button>
+                                    </>
                                   ) : null}
 
                                   {job.error_message ? (
@@ -2762,15 +3405,50 @@ export function ImageUploader({
 
                                 {job?.public_url &&
                                 job.status === "completed" ? (
-                                  <Image
-                                    alt={dictionary.imageUploader.detailPageModuleAlt(
-                                      module.id,
-                                    )}
-                                    className="mt-3 max-h-80 w-full rounded-md object-contain"
-                                    height={320}
-                                    src={job.public_url}
-                                    width={512}
-                                  />
+                                  <>
+                                    <Button
+                                      className="mt-3"
+                                      disabled={downloadingImageId === job.id}
+                                      onClick={() =>
+                                        void handleDownloadGeneratedImage(job)
+                                      }
+                                      size="sm"
+                                      type="button"
+                                      variant="outline"
+                                    >
+                                      {downloadingImageId === job.id ? (
+                                        <Loader2
+                                          aria-hidden="true"
+                                          className="animate-spin"
+                                        />
+                                      ) : (
+                                        <Download aria-hidden="true" />
+                                      )}
+                                      {dictionary.dashboard.download}
+                                    </Button>
+                                    <button
+                                      className="mt-3 block w-full cursor-zoom-in rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                                      onClick={() =>
+                                        openImagePreview({
+                                          alt: dictionary.imageUploader.detailPageModuleAlt(
+                                            module.id,
+                                          ),
+                                          src: job.public_url || "",
+                                        })
+                                      }
+                                      type="button"
+                                    >
+                                      <Image
+                                        alt={dictionary.imageUploader.detailPageModuleAlt(
+                                          module.id,
+                                        )}
+                                        className="max-h-80 w-full rounded-md object-contain"
+                                        height={320}
+                                        src={job.public_url}
+                                        width={512}
+                                      />
+                                    </button>
+                                  </>
                                 ) : null}
 
                                 {job?.error_message ? (
@@ -2782,6 +3460,7 @@ export function ImageUploader({
                             );
                           }) : null}
                         </div>
+                        ) : null}
 
                         {detailPageExportStatus === "exporting" ? (
                           <div className="mt-4 flex items-center gap-2 rounded-md bg-secondary p-3 text-sm">
@@ -2849,7 +3528,41 @@ export function ImageUploader({
           </div>
         ) : null}
       </div>
+      {previewImage ? (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4"
+          onClick={() => setPreviewImage(null)}
+          role="presentation"
+        >
+          <div
+            className="relative flex max-h-full w-full max-w-6xl flex-col gap-3"
+            onClick={(event) => event.stopPropagation()}
+            role="presentation"
+          >
+            <div className="flex items-center justify-between gap-3 text-white">
+              <p className="truncate text-sm font-medium">{previewImage.alt}</p>
+              <Button
+                onClick={() => setPreviewImage(null)}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                {dictionary.imageUploader.closePreview}
+              </Button>
+            </div>
+            <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto rounded-lg bg-background p-2">
+              <Image
+                alt={previewImage.alt}
+                className="max-h-[82vh] w-auto max-w-full object-contain"
+                height={1200}
+                src={previewImage.src}
+                width={1200}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
-    </div>
+  </div>
   );
 }
