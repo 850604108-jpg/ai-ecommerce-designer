@@ -10,7 +10,7 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground shadow-sm before:absolute before:inset-y-0 before:-left-20 before:w-14 before:skew-x-[-18deg] before:bg-white/25 before:opacity-0 before:transition-all before:duration-500 hover:-translate-y-0.5 hover:bg-primary/95 hover:shadow-[var(--shadow-lifted)] hover:before:left-[120%] hover:before:opacity-100",
+          "bg-primary text-primary-foreground shadow-sm before:pointer-events-none before:absolute before:inset-y-0 before:-left-20 before:w-14 before:skew-x-[-18deg] before:bg-white/25 before:opacity-0 before:transition-all before:duration-500 hover:-translate-y-0.5 hover:bg-primary/95 hover:shadow-[var(--shadow-lifted)] hover:before:left-[120%] hover:before:opacity-100",
         outline:
           "border border-input bg-card/80 shadow-sm backdrop-blur hover:-translate-y-0.5 hover:border-ring/45 hover:bg-accent/70 hover:text-accent-foreground hover:shadow-[var(--shadow-soft)]",
         ghost:

@@ -1228,6 +1228,10 @@ export function ImageUploader({
   }
 
   function selectFile(nextFile?: File) {
+    if (inputRef.current) {
+      inputRef.current.value = "";
+    }
+
     clearGenerationDraft();
     setResult(null);
     setProgress(0);
@@ -2480,11 +2484,15 @@ export function ImageUploader({
           type="file"
         />
         <div className="mt-6 flex flex-wrap justify-center gap-3">
-          <Button asChild variant="outline">
-            <label htmlFor={inputId}>{dictionary.imageUploader.chooseFile}</label>
+          <Button
+            onClick={() => inputRef.current?.click()}
+            type="button"
+            variant="outline"
+          >
+            {dictionary.imageUploader.chooseFile}
           </Button>
           <Button
-            disabled={!file || status === "uploading" || !isAuthenticated}
+            disabled={!file || status === "uploading"}
             onClick={handleUpload}
             type="button"
           >
