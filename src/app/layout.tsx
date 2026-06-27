@@ -56,7 +56,11 @@ export default async function RootLayout({
         <LanguageProvider initialLanguage={language}>
           <BackgroundGenerationProvider>
             <SiteHeader language={language} />
-            <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
+            <main className="relative mx-auto max-w-6xl px-4 py-10 sm:px-6">
+              <div
+                aria-hidden="true"
+                className="app-shell-grid pointer-events-none absolute inset-x-0 top-0 -z-10 h-[34rem]"
+              />
               {children}
             </main>
           </BackgroundGenerationProvider>

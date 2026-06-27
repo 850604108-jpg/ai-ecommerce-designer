@@ -240,9 +240,44 @@ export const dictionaries = {
       },
     },
     home: {
+      capabilities: [
+        {
+          description:
+            "Recognize product details, target users, and selling points before writing prompts.",
+          title: "Product understanding",
+        },
+        {
+          description:
+            "Create marketplace-ready prompt sets for secondary images, infographics, and detail modules.",
+          title: "Prompt engine",
+        },
+        {
+          description:
+            "Track generation jobs, credits, downloads, and regeneration from one dashboard.",
+          title: "Asset workspace",
+        },
+      ],
       dashboard: "Open Dashboard",
       eyebrow: "AI Ecommerce Creative Suite",
+      flow: [
+        "Upload a product photo",
+        "Extract product facts",
+        "Generate platform prompts",
+        "Create and manage assets",
+      ],
       generate: "Go to Generate",
+      metrics: [
+        { label: "Core workflow", value: "4 steps" },
+        { label: "Listing roles", value: "AS-01 to AS-07" },
+        { label: "Detail modules", value: "AD-ready" },
+      ],
+      preview: {
+        cardTitle: "Live creative queue",
+        detail: "Detail page modules",
+        prompt: "Prompt set ready",
+        recognition: "Recognition complete",
+        title: "Marketplace asset pipeline",
+      },
       templates: "Explore Templates",
       subtitle:
         "Upload a product image, recognize selling points, generate platform prompts, create AI product visuals, and manage credits in one focused workflow.",
@@ -624,9 +659,36 @@ export const dictionaries = {
       },
     },
     home: {
+      capabilities: [
+        {
+          description: "先识别产品细节、目标用户和核心卖点，再生成提示词。",
+          title: "产品理解",
+        },
+        {
+          description: "为副图、信息图和详情页模块生成可直接执行的平台提示词。",
+          title: "提示词引擎",
+        },
+        {
+          description: "在一个工作台中追踪生成任务、积分、下载和重新生成。",
+          title: "素材工作台",
+        },
+      ],
       dashboard: "打开 Dashboard",
       eyebrow: "AI 电商创意套件",
+      flow: ["上传产品图", "提取商品信息", "生成平台提示词", "创建并管理素材"],
       generate: "去 Generate",
+      metrics: [
+        { label: "核心流程", value: "4 步" },
+        { label: "Listing 角色", value: "AS-01 至 AS-07" },
+        { label: "详情页模块", value: "AD 就绪" },
+      ],
+      preview: {
+        cardTitle: "实时创意队列",
+        detail: "详情页模块",
+        prompt: "提示词已就绪",
+        recognition: "产品识别完成",
+        title: "电商素材生成管线",
+      },
       templates: "浏览模板",
       subtitle:
         "上传一张产品图，识别卖点，生成平台提示词，创建 AI 商品视觉，并在一个清晰流程中管理积分。",
