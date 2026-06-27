@@ -226,6 +226,8 @@ export const dictionaries = {
       viewGeneratedImage: "View generated image",
     },
     generate: {
+      description:
+        "Move from product upload to recognition, platform prompts, and generated assets in one guided workspace.",
       eyebrow: "Workspace",
       title: "Generate",
     },
@@ -371,6 +373,9 @@ export const dictionaries = {
         package: "Package/family image",
       },
       product: "Product",
+      productInformation: "Product information",
+      productInformationDescription:
+        "Review and refine recognized product facts before prompt generation.",
       productRecognitionFailed: "Product recognition failed.",
       productRecognitionInvalid:
         "Product recognition returned an invalid response.",
@@ -414,6 +419,7 @@ export const dictionaries = {
       listingSetGenerate: (cost: number) =>
         `Secondary image set 1:1 · ${cost} Credits`,
       closePreview: "Close",
+      previewLoading: "Loading preview...",
     },
     language: {
       label: "Language",
@@ -645,6 +651,8 @@ export const dictionaries = {
       viewGeneratedImage: "查看生成图",
     },
     generate: {
+      description:
+        "在一个引导式工作台中完成产品上传、识别、平台提示词和素材生成。",
       eyebrow: "Workspace",
       title: "Generate",
     },
@@ -774,6 +782,9 @@ export const dictionaries = {
         package: "包装/全家福图",
       },
       product: "产品",
+      productInformation: "产品信息",
+      productInformationDescription:
+        "生成提示词前，先确认并微调识别出的商品信息。",
       productRecognitionFailed: "产品识别失败。",
       productRecognitionInvalid: "产品识别返回了无效响应。",
       progress: "进度",
@@ -814,6 +825,7 @@ export const dictionaries = {
       uploadStatus: "上传状态",
       listingSetGenerate: (cost: number) => `副图套组 1:1 · ${cost} Credits`,
       closePreview: "关闭",
+      previewLoading: "预览加载中...",
     },
     language: {
       label: "语言",

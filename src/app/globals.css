@@ -106,3 +106,189 @@ button {
     radial-gradient(circle at 82% 18%, rgb(124 58 237 / 0.32), transparent 26%),
     linear-gradient(135deg, rgb(15 23 42), rgb(30 41 59));
 }
+
+@keyframes fade-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes soft-pulse-ring {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.92;
+    transform: scale(1.025);
+  }
+}
+
+@keyframes wait-shimmer {
+  from {
+    transform: translateX(-120%);
+  }
+
+  to {
+    transform: translateX(220%);
+  }
+}
+
+@keyframes preview-backdrop-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes preview-content-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-fade-slide-up {
+  animation: fade-slide-up 260ms ease-out both;
+}
+
+.btn-motion {
+  transform-origin: center;
+}
+
+.btn-motion::after,
+.waiting-surface::before {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgb(255 255 255 / 0.32),
+    transparent
+  );
+  content: "";
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  transform: translateX(-120%);
+}
+
+.btn-motion:active:not(:disabled) {
+  transform: translateY(1px) scale(0.985);
+}
+
+.btn-motion:has(.animate-spin)::after {
+  animation: wait-shimmer 1.35s ease-in-out infinite;
+  opacity: 1;
+}
+
+.interactive-card {
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background-color 180ms ease;
+}
+
+.interactive-card:hover {
+  border-color: color-mix(in oklab, var(--ring) 45%, var(--border));
+  box-shadow: var(--shadow-soft);
+  transform: translateY(-2px);
+}
+
+.soft-pulse-ring {
+  animation: soft-pulse-ring 1.8s ease-in-out infinite;
+  will-change: opacity, transform;
+}
+
+.waiting-surface {
+  overflow: hidden;
+  position: relative;
+}
+
+.waiting-surface::before {
+  animation: wait-shimmer 1.8s ease-in-out infinite;
+  opacity: 1;
+  will-change: transform;
+}
+
+.image-preview-trigger {
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    background-color 180ms ease;
+}
+
+.image-preview-trigger:hover {
+  background-color: color-mix(in oklab, var(--accent) 40%, transparent);
+  box-shadow: var(--shadow-soft);
+  transform: translateY(-2px) scale(1.005);
+}
+
+.image-preview-trigger:active {
+  transform: translateY(0) scale(0.99);
+}
+
+.preview-backdrop {
+  animation: preview-backdrop-in 180ms ease-out both;
+}
+
+.preview-content {
+  animation: preview-content-in 220ms ease-out both;
+  will-change: opacity, transform;
+}
+
+.preview-image {
+  transition: transform 220ms ease;
+  will-change: transform;
+}
+
+.preview-image:hover {
+  transform: scale(1.01);
+}
+
+.scrollbar-none {
+  scrollbar-width: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-slide-up,
+  .soft-pulse-ring,
+  .waiting-surface::before,
+  .btn-motion:has(.animate-spin)::after,
+  .preview-backdrop,
+  .preview-content {
+    animation: none;
+  }
+
+  .interactive-card,
+  .interactive-card:hover,
+  .image-preview-trigger,
+  .image-preview-trigger:hover,
+  .image-preview-trigger:active,
+  .preview-image,
+  .preview-image:hover,
+  .btn-motion:active:not(:disabled) {
+    transform: none;
+    transition: none;
+  }
+}

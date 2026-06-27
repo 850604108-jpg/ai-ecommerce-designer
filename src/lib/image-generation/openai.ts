@@ -34,7 +34,7 @@ function getImageGenerationTimeoutMs() {
 
   return Number.isFinite(parsed)
     ? Math.min(Math.max(parsed, 30_000), 180_000)
-    : 90_000;
+    : 180_000;
 }
 
 export async function generateImageWithOpenAI(options: ImageGenerationOptions) {

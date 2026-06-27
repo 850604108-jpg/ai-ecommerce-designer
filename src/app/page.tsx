@@ -140,7 +140,7 @@ export default async function HomePage() {
       <div className="grid gap-4 md:grid-cols-4">
         {dictionary.home.flow.map((step, index) => (
           <div
-            className="group rounded-xl border border-border/80 bg-card/80 p-4 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:border-ring/40 hover:shadow-[var(--shadow-soft)]"
+            className="group rounded-xl border border-border/80 bg-card/80 p-4 shadow-sm transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-1 hover:border-ring/40 hover:shadow-[var(--shadow-soft)]"
             key={step}
           >
             <div className="mb-4 inline-flex size-8 items-center justify-center rounded-lg bg-secondary text-sm font-semibold text-secondary-foreground transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
@@ -157,7 +157,7 @@ export default async function HomePage() {
 
           return (
             <article
-              className="rounded-xl border border-border/80 bg-card p-5 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:border-ring/40 hover:shadow-[var(--shadow-soft)]"
+              className="rounded-xl border border-border/80 bg-card p-5 shadow-sm transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-1 hover:border-ring/40 hover:shadow-[var(--shadow-soft)]"
               key={capability.title}
             >
               <div className="mb-5 grid size-10 place-items-center rounded-lg bg-accent text-accent-foreground">

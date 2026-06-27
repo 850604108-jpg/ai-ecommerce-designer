@@ -26,6 +26,7 @@ const defaultSize = "1024x1024";
 const defaultQuality = "medium";
 const defaultOutputFormat = "webp";
 export const recycleBinRetentionDays = 30;
+const defaultProcessingRecoveryMs = 6 * 60 * 1000;
 const historySelect =
   "id,project_id,prompt,model,storage_bucket,storage_path,status,width,height,credits_spent,error_message,generation_params,metadata,created_at,updated_at,project:projects(id,name,description,status,created_at)";
 const jobSelect =
@@ -55,6 +56,46 @@ function withPublicUrl(
     ...job,
     public_url: getPublicUrl(supabase, job.storage_bucket, job.storage_path),
   };
+}
+
+function getProcessingRecoveryMs() {
+  const parsed = Number.parseInt(
+    process.env.IMAGE_GENERATION_PROCESSING_RECOVERY_MS || "",
+    10,
+  );
+
+  return Number.isFinite(parsed)
+    ? Math.min(Math.max(parsed, 180_000), 1_800_000)
+    : defaultProcessingRecoveryMs;
+}
+
+function isProcessingJobStale(job: GeneratedImageJob) {
+  const updatedAt = Date.parse(job.updated_at);
+
+  if (!Number.isFinite(updatedAt)) {
+    return true;
+  }
+
+  return Date.now() - updatedAt >= getProcessingRecoveryMs();
+}
+
+async function reloadImageGenerationJob(input: {
+  supabase: SupabaseClient;
+  userId: string;
+  jobId: string;
+}) {
+  const { data, error } = await input.supabase
+    .from("generated_images")
+    .select(jobSelect)
+    .eq("id", input.jobId)
+    .eq("user_id", input.userId)
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return withPublicUrl(input.supabase, data as GeneratedImageJob);
 }
 
 function getRecognitionId(value: Record<string, unknown>) {
@@ -581,7 +622,9 @@ export async function processImageGenerationJob(input: {
   }
 
   if (currentJob.status === "processing") {
-    return withPublicUrl(input.supabase, currentJob);
+    if (!isProcessingJobStale(currentJob)) {
+      return withPublicUrl(input.supabase, currentJob);
+    }
   }
 
   if (currentJob.status === "failed") {
@@ -627,14 +670,35 @@ export async function processImageGenerationJob(input: {
     });
     creditsCharged = true;
 
-    const { error: processingError } = await input.supabase
+    const processingUpdate = input.supabase
       .from("generated_images")
       .update({ status: "processing", error_message: null })
       .eq("id", currentJob.id)
-      .eq("user_id", input.userId);
+      .eq("user_id", input.userId)
+      .select(jobSelect);
+
+    if (currentJob.status === "processing") {
+      processingUpdate.lte(
+        "updated_at",
+        new Date(Date.now() - getProcessingRecoveryMs()).toISOString(),
+      );
+    } else {
+      processingUpdate.eq("status", "queued");
+    }
+
+    const { data: processingJob, error: processingError } =
+      await processingUpdate.maybeSingle();
 
     if (processingError) {
       throw new Error(processingError.message);
+    }
+
+    if (!processingJob) {
+      return reloadImageGenerationJob({
+        jobId: currentJob.id,
+        supabase: input.supabase,
+        userId: input.userId,
+      });
     }
 
     const generated = await generateImageWithOpenAI({

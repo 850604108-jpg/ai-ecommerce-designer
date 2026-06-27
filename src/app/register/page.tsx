@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { signUp } from "@/app/auth/actions";
 import { AuthMessage, getAuthMessage } from "@/app/auth/auth-message";
-import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { getDictionary } from "@/lib/i18n";
 import { getCurrentLanguage } from "@/lib/i18n-server";
 
@@ -61,9 +61,9 @@ export default async function RegisterPage({
               type="password"
             />
           </div>
-          <Button className="w-full" type="submit">
+          <SubmitButton className="w-full" pendingLabel={dictionary.common.processing}>
             {dictionary.auth.createAccount}
-          </Button>
+          </SubmitButton>
         </form>
       </div>
 

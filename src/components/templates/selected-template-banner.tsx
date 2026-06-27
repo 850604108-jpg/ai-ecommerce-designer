@@ -58,14 +58,19 @@ export function SelectedTemplateBanner() {
   }
 
   return (
-    <div className="rounded-md border bg-card p-4">
+    <div className="animate-fade-slide-up interactive-card rounded-xl border border-border/80 bg-card/85 p-4 shadow-sm backdrop-blur">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-2">
-          <div className="flex items-center gap-2 text-sm font-medium">
-            <Sparkles aria-hidden="true" className="size-4" />
+          <div className="inline-flex items-center gap-2 rounded-full bg-secondary px-3 py-1 text-xs font-semibold text-muted-foreground">
+            <Sparkles
+              aria-hidden="true"
+              className="size-3.5 text-[var(--signal-violet)]"
+            />
             {dictionary.templates.selected}
           </div>
-          <h2 className="text-lg font-semibold">{selectedTemplate.name}</h2>
+          <h2 className="text-lg font-semibold tracking-tight">
+            {selectedTemplate.name}
+          </h2>
           <p className="text-sm text-muted-foreground">
             {dictionary.templates.category(
               categoryLabels[selectedTemplate.category],
@@ -77,7 +82,7 @@ export function SelectedTemplateBanner() {
           {copied ? dictionary.templates.copied : dictionary.templates.copyPrompt}
         </Button>
       </div>
-      <p className="mt-3 rounded-md bg-secondary p-3 text-xs leading-5 text-muted-foreground">
+      <p className="mt-3 max-h-32 overflow-auto rounded-lg border border-border/70 bg-secondary/70 p-3 text-xs leading-5 text-muted-foreground">
         {selectedTemplate.prompt}
       </p>
     </div>

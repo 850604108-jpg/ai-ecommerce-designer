@@ -128,11 +128,11 @@ export function TemplateMarketplace() {
         </Button>
       </div>
 
-      <div className="flex gap-2 overflow-x-auto pb-1">
+      <div className="scrollbar-none -mx-1 flex gap-2 overflow-x-auto px-1 pb-1 scroll-smooth">
         {categoryOptions.map((category) => (
           <button
             className={cn(
-              "h-9 shrink-0 rounded-md border px-3 text-sm font-medium transition-colors",
+              "btn-motion h-9 shrink-0 rounded-md border px-3 text-sm font-medium transition-[background-color,border-color,color,transform]",
               activeCategory === category.value
                 ? "bg-primary text-primary-foreground"
                 : "bg-background hover:bg-accent",

@@ -154,7 +154,7 @@ export function BackgroundGenerationProvider({
       {children}
       {shouldShowBar ? (
         <button
-          className="fixed bottom-4 left-1/2 z-50 w-[min(92vw,520px)] -translate-x-1/2 rounded-lg border bg-background p-3 text-left shadow-lg"
+          className="btn-motion interactive-card fixed bottom-4 left-1/2 z-50 w-[min(92vw,520px)] -translate-x-1/2 overflow-hidden rounded-lg border bg-background p-3 text-left shadow-lg"
           onClick={handleReturn}
           type="button"
         >
@@ -176,10 +176,17 @@ export function BackgroundGenerationProvider({
               <span>{statusLabel}</span>
             </div>
           </div>
-          <div className="mt-3 h-2 overflow-hidden rounded-full bg-secondary">
+          <div
+            className={cn(
+              "mt-3 h-2 overflow-hidden rounded-full bg-secondary",
+              progress.status !== "success" &&
+                progress.status !== "error" &&
+                "waiting-surface",
+            )}
+          >
             <div
               className={cn(
-                "h-full rounded-full transition-all",
+                "h-full rounded-full transition-[background-color,width] duration-300 ease-out",
                 progress.status === "error" ? "bg-destructive" : "bg-primary",
               )}
               style={{ width: `${percent}%` }}

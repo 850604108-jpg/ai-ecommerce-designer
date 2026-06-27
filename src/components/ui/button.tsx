@@ -5,12 +5,12 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "group relative inline-flex items-center justify-center gap-2 overflow-hidden whitespace-nowrap rounded-md text-sm font-semibold transition-all duration-200 ease-out disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:translate-y-px",
+  "btn-motion group relative inline-flex items-center justify-center gap-2 overflow-hidden whitespace-nowrap rounded-md text-sm font-semibold transition-[background-color,border-color,color,box-shadow,opacity,transform] duration-200 ease-out disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
   {
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground shadow-sm before:pointer-events-none before:absolute before:inset-y-0 before:-left-20 before:w-14 before:skew-x-[-18deg] before:bg-white/25 before:opacity-0 before:transition-all before:duration-500 hover:-translate-y-0.5 hover:bg-primary/95 hover:shadow-[var(--shadow-lifted)] hover:before:left-[120%] hover:before:opacity-100",
+          "bg-primary text-primary-foreground shadow-sm before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-14 before:-translate-x-[150%] before:skew-x-[-18deg] before:bg-white/25 before:opacity-0 before:transition-[opacity,transform] before:duration-500 hover:-translate-y-0.5 hover:bg-primary/95 hover:shadow-[var(--shadow-lifted)] hover:before:translate-x-[420%] hover:before:opacity-100",
         outline:
           "border border-input bg-card/80 shadow-sm backdrop-blur hover:-translate-y-0.5 hover:border-ring/45 hover:bg-accent/70 hover:text-accent-foreground hover:shadow-[var(--shadow-soft)]",
         ghost:

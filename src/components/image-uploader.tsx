@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import {
   CheckCircle2,
+  ChevronDown,
   Clock3,
   Coins,
   Copy,
@@ -37,8 +38,6 @@ import {
 } from "@/lib/prompt-engine";
 import {
   imageGenerationCreditCosts,
-  isGeneratedImageSize,
-  isGeneratedImageType,
   type GeneratedImageSize,
   type GeneratedImageJob,
   type GeneratedImageType,
@@ -55,6 +54,8 @@ const allowedTypes = new Set([
 const allowedExtensions = new Set(["jpg", "jpeg", "png", "webp"]);
 const promptGenerationCreditCost = 3;
 const imageGenerationConcurrency = 1;
+const queuedJobRecoveryMs = 2 * 60 * 1000;
+const processingJobRecoveryMs = 6 * 60 * 1000;
 type UploadResult = {
   imageUrl: string;
   recognition?: ProductRecognitionResult;
@@ -133,6 +134,66 @@ type ImageUploaderGenerationDraft = {
   status: UploadState;
 };
 
+type CollapsibleSectionProps = {
+  children: ReactNode;
+  collapsed: boolean;
+  description?: string;
+  meta?: ReactNode;
+  onToggle: () => void;
+  title: string;
+};
+
+function CollapsibleSection({
+  children,
+  collapsed,
+  description,
+  meta,
+  onToggle,
+  title,
+}: CollapsibleSectionProps) {
+  return (
+    <section className="animate-fade-slide-up overflow-hidden rounded-xl border border-border/80 bg-background/60 shadow-sm">
+      <button
+        aria-expanded={!collapsed}
+        className="btn-motion flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-[background-color,transform] hover:bg-accent/45"
+        onClick={onToggle}
+        type="button"
+      >
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-semibold tracking-tight">
+            {title}
+          </span>
+          {description ? (
+            <span className="mt-1 block line-clamp-2 text-xs leading-5 text-muted-foreground">
+              {description}
+            </span>
+          ) : null}
+        </span>
+        <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+          {meta}
+          <ChevronDown
+            aria-hidden="true"
+            className={cn(
+              "size-4 transition-transform duration-200",
+              collapsed ? "-rotate-90" : "rotate-0",
+            )}
+          />
+        </span>
+      </button>
+      <div
+        className={cn(
+          "grid transition-[grid-template-rows,opacity] duration-200 ease-out",
+          collapsed ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100",
+        )}
+      >
+        <div className="min-h-0 overflow-hidden">
+          <div className="border-t border-border/70 p-4">{children}</div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 const listingImageCountOptions = [1, 2, 3, 4, 5, 6, 7] as const;
 const listingImageRoleOptions: Array<{
   label: string;
@@ -185,13 +246,6 @@ const platformLabels: Record<EcommercePlatform, string> = {
   kuaishou: "快手电商",
   wechat: "微信小店",
 };
-
-function isEcommercePlatformValue(value: unknown): value is EcommercePlatform {
-  return (
-    typeof value === "string" &&
-    ecommercePlatforms.includes(value as EcommercePlatform)
-  );
-}
 
 function isAllowedImage(file: File) {
   const extension = file.name.split(".").pop()?.toLowerCase();
@@ -650,6 +704,16 @@ function hasPendingGeneratedJobs(jobs: GeneratedImageJob[]) {
   );
 }
 
+function isRecoverableGeneratedJob(job: GeneratedImageJob) {
+  const updatedAt = Date.parse(job.updated_at);
+  const age = Number.isFinite(updatedAt) ? Date.now() - updatedAt : Infinity;
+
+  return (
+    (job.status === "queued" && age >= queuedJobRecoveryMs) ||
+    (job.status === "processing" && age >= processingJobRecoveryMs)
+  );
+}
+
 function hasFailedGeneratedJobs(jobs: GeneratedImageJob[]) {
   return jobs.some((job) => job.status === "failed");
 }
@@ -964,6 +1028,12 @@ export function ImageUploader({
   const [previewImage, setPreviewImage] = useState<ImagePreviewState | null>(
     null,
   );
+  const [isPreviewImageLoading, setIsPreviewImageLoading] = useState(false);
+  const [isProductInfoCollapsed, setIsProductInfoCollapsed] = useState(false);
+  const [isPromptSectionCollapsed, setIsPromptSectionCollapsed] =
+    useState(false);
+  const [isImageGenerationCollapsed, setIsImageGenerationCollapsed] =
+    useState(true);
   const [creditBalance, setCreditBalance] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -1190,6 +1260,42 @@ export function ImageUploader({
 
         setGeneratedImageJobs(refreshedJobs);
 
+        const recoverableJob = refreshedJobs.find(isRecoverableGeneratedJob);
+
+        if (recoverableJob) {
+          setImageQueueStatus("processing");
+          setImageQueueError("");
+
+          try {
+            const processed = await processGeneratedImage(recoverableJob.id);
+
+            if (!isActive) {
+              return;
+            }
+
+            if (processed.creditBalance !== null) {
+              setCreditBalance(processed.creditBalance);
+            }
+
+            upsertGeneratedImageJob(processed.job);
+          } catch {
+            const failedRefresh = await refreshGeneratedImages([
+              recoverableJob.id,
+            ]).catch(() => []);
+
+            if (!isActive) {
+              return;
+            }
+
+            if (failedRefresh[0]) {
+              upsertGeneratedImageJob(failedRefresh[0]);
+            }
+          }
+
+          backgroundRefreshTimer = window.setTimeout(refreshBackgroundJobs, 1000);
+          return;
+        }
+
         if (hasPendingGeneratedJobs(refreshedJobs)) {
           backgroundRefreshTimer = window.setTimeout(refreshBackgroundJobs, 3000);
           return;
@@ -1244,7 +1350,32 @@ export function ImageUploader({
     };
   }, [previewImage]);
 
+  useEffect(() => {
+    if (result?.recognition) {
+      setIsProductInfoCollapsed(false);
+      setIsPromptSectionCollapsed(false);
+    }
+  }, [result?.recognition]);
+
+  useEffect(() => {
+    if (prompts || promptStatus === "generating") {
+      setIsPromptSectionCollapsed(false);
+    }
+  }, [prompts, promptStatus]);
+
+  useEffect(() => {
+    if (
+      prompts &&
+      (imageQueueStatus !== "idle" ||
+        generatedImageJobs.length > 0 ||
+        detailPageExportStatus === "exporting")
+    ) {
+      setIsImageGenerationCollapsed(false);
+    }
+  }, [detailPageExportStatus, generatedImageJobs.length, imageQueueStatus, prompts]);
+
   function openImagePreview(image: ImagePreviewState) {
+    setIsPreviewImageLoading(true);
     setPreviewImage(image);
   }
 
@@ -1267,6 +1398,9 @@ export function ImageUploader({
     setGeneratedImageJobs([]);
     setDetailPageExportStatus("idle");
     setDetailPageExportError("");
+    setIsProductInfoCollapsed(false);
+    setIsPromptSectionCollapsed(false);
+    setIsImageGenerationCollapsed(true);
 
     if (!nextFile) {
       setFile(null);
@@ -1310,6 +1444,9 @@ export function ImageUploader({
     setGeneratedImageJobs([]);
     setDetailPageExportStatus("idle");
     setDetailPageExportError("");
+    setIsProductInfoCollapsed(false);
+    setIsPromptSectionCollapsed(false);
+    setIsImageGenerationCollapsed(true);
 
     let uploadResult: UploadResult;
 
@@ -1638,19 +1775,6 @@ export function ImageUploader({
     });
   }
 
-  function replaceGeneratedImageJob(input: {
-    nextJob: GeneratedImageJob;
-    previousJobId: string;
-  }) {
-    setGeneratedImageJobs((currentJobs) => {
-      const nextJobs = currentJobs.filter(
-        (currentJob) => currentJob.id !== input.previousJobId,
-      );
-
-      return sortGeneratedImageJobs([...nextJobs, input.nextJob]);
-    });
-  }
-
   function upsertListingImageJob(nextJob: GeneratedImageJob) {
     setGeneratedImageJobs((currentJobs) => {
       const nextModuleId = getJobModuleId(nextJob);
@@ -1693,42 +1817,7 @@ export function ImageUploader({
         }
 
         if (attempt < 2) {
-          const previousJobId = activeJob.id;
-          const imageType = activeJob.metadata?.image_type;
-          const generationParams = activeJob.generation_params || {};
-          const moduleId = getJobModuleId(activeJob);
-          const recognitionId = activeJob.metadata?.product_recognition_id;
-          const replacement = await queueGeneratedImage({
-            imageType: isGeneratedImageType(imageType)
-              ? imageType
-              : "main_image",
-            moduleId,
-            platform: isEcommercePlatformValue(activeJob.metadata?.platform)
-              ? activeJob.metadata.platform
-              : selectedPlatform,
-            prompt: activeJob.prompt,
-            recognitionId:
-              typeof recognitionId === "string"
-                ? recognitionId
-                : result?.recognition?.id,
-            styleReferenceImageUrl:
-              typeof activeJob.metadata?.style_reference_image_url === "string"
-                ? activeJob.metadata.style_reference_image_url
-                : referenceStyleImage?.imageUrl,
-            size: isGeneratedImageSize(generationParams.size)
-              ? generationParams.size
-              : "1024x1024",
-          });
-
-          if (replacement.creditBalance !== null) {
-            setCreditBalance(replacement.creditBalance);
-          }
-
-          activeJob = replacement.job;
-          replaceGeneratedImageJob({
-            nextJob: { ...activeJob, status: "processing" },
-            previousJobId,
-          });
+          activeJob = refreshedJob || activeJob;
           await sleep(1200);
           continue;
         }
@@ -2193,10 +2282,10 @@ export function ImageUploader({
 
   return (
     <div className="space-y-5" id="generation-workspace">
-      <div className="rounded-lg border bg-card p-5">
+      <div className="animate-fade-slide-up interactive-card rounded-2xl border border-border/80 bg-card/85 p-5 shadow-sm backdrop-blur">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h2 className="text-base font-medium">
+            <h2 className="text-base font-semibold tracking-tight">
               {dictionary.imageUploader.generationSettings}
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
@@ -2227,9 +2316,9 @@ export function ImageUploader({
           </div>
         </div>
 
-        <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        <div className="mt-5 grid gap-3 lg:grid-cols-2">
           {isMainMode ? (
-          <div className="rounded-md border p-3 lg:col-span-2">
+          <div className="animate-fade-slide-up rounded-xl border border-border/80 bg-background/55 p-4 lg:col-span-2">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h3 className="text-sm font-medium">
@@ -2262,7 +2351,7 @@ export function ImageUploader({
 
                 return (
                   <label
-                    className="flex items-center justify-between gap-3 rounded-md bg-secondary p-2 text-xs text-muted-foreground"
+                    className="interactive-card flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-secondary/75 p-2 text-xs text-muted-foreground"
                     key={slotId}
                   >
                     <span className="font-medium text-foreground">
@@ -2369,7 +2458,7 @@ export function ImageUploader({
           ) : null}
 
           {isDetailMode ? (
-          <div className="rounded-md border p-3 lg:col-span-2">
+          <div className="animate-fade-slide-up rounded-xl border border-border/80 bg-background/55 p-4 lg:col-span-2">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h3 className="text-sm font-medium">
@@ -2473,8 +2562,8 @@ export function ImageUploader({
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(280px,380px)]">
       <div
         className={cn(
-          "flex min-h-[320px] flex-col items-center justify-center rounded-lg border border-dashed bg-card p-6 text-center transition-colors",
-          isDragging && "border-primary bg-accent",
+          "animate-fade-slide-up interactive-card flex min-h-[340px] flex-col items-center justify-center rounded-2xl border border-dashed border-border/90 bg-card/85 p-6 text-center shadow-sm backdrop-blur",
+          isDragging && "soft-pulse-ring border-primary bg-accent/80",
         )}
         onDragEnter={(event) => {
           event.preventDefault();
@@ -2496,7 +2585,7 @@ export function ImageUploader({
         {previewUrl ? (
           <Image
             alt={dictionary.imageUploader.selectedPreviewAlt}
-            className="max-h-[280px] w-full rounded-md object-contain"
+            className="animate-fade-slide-up max-h-[280px] w-full rounded-xl border border-border/70 bg-background/70 object-contain p-2 shadow-sm"
             height={280}
             src={previewUrl}
             unoptimized
@@ -2504,7 +2593,7 @@ export function ImageUploader({
           />
         ) : (
           <div className="flex max-w-sm flex-col items-center gap-4">
-            <div className="flex size-14 items-center justify-center rounded-full bg-secondary">
+            <div className="soft-pulse-ring flex size-14 items-center justify-center rounded-full bg-secondary">
               <ImagePlus aria-hidden="true" className="size-6" />
             </div>
             <div>
@@ -2554,10 +2643,10 @@ export function ImageUploader({
         </div>
       </div>
 
-      <div className="rounded-lg border bg-card p-5">
+      <div className="animate-fade-slide-up interactive-card rounded-2xl border border-border/80 bg-card/85 p-5 shadow-sm backdrop-blur">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-base font-medium">
+            <h2 className="text-base font-semibold tracking-tight">
               {dictionary.imageUploader.uploadStatus}
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
@@ -2613,14 +2702,14 @@ export function ImageUploader({
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-secondary">
             <div
-              className="h-full rounded-full bg-primary transition-all"
+              className="h-full rounded-full bg-primary transition-[width] duration-300 ease-out"
               style={{ width: `${progress}%` }}
             />
           </div>
         </div>
 
         {recognitionStatus === "recognizing" ? (
-          <div className="mt-4 flex items-center gap-2 rounded-md border bg-secondary p-3 text-sm">
+          <div className="waiting-surface animate-fade-slide-up mt-4 flex items-center gap-2 rounded-lg border border-border/80 bg-secondary/75 p-3 text-sm">
             <Loader2 aria-hidden="true" className="size-4 animate-spin" />
             {dictionary.imageUploader.recognizingDetails}
           </div>
@@ -2641,7 +2730,17 @@ export function ImageUploader({
                     {result.recognitionWarning}
                   </p>
                 ) : null}
-                <div className="space-y-3 rounded-md bg-secondary p-3 text-sm">
+                <CollapsibleSection
+                  collapsed={isProductInfoCollapsed}
+                  description={
+                    dictionary.imageUploader.productInformationDescription
+                  }
+                  onToggle={() =>
+                    setIsProductInfoCollapsed((current) => !current)
+                  }
+                  title={dictionary.imageUploader.productInformation}
+                >
+                <div className="space-y-3 rounded-xl border border-border/70 bg-secondary/65 p-4 text-sm">
                   <div>
                     <label className="text-xs text-muted-foreground">
                       {dictionary.imageUploader.product}
@@ -2730,17 +2829,27 @@ export function ImageUploader({
                     </div>
                   </div>
                 </div>
+                </CollapsibleSection>
 
-                <div className="rounded-md border p-3">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <h3 className="text-sm font-medium">
-                        {dictionary.imageUploader.promptEngine}
-                      </h3>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {dictionary.imageUploader.promptEngineDescription}
-                      </p>
-                    </div>
+                <CollapsibleSection
+                  collapsed={isPromptSectionCollapsed}
+                  description={dictionary.imageUploader.promptEngineDescription}
+                  meta={
+                    promptStatus === "generating" ? (
+                      <Loader2
+                        aria-hidden="true"
+                        className="size-3 animate-spin"
+                      />
+                    ) : prompts ? (
+                      dictionary.common.ready
+                    ) : null
+                  }
+                  onToggle={() =>
+                    setIsPromptSectionCollapsed((current) => !current)
+                  }
+                  title={dictionary.imageUploader.promptEngine}
+                >
+                  <div className="flex flex-wrap items-center justify-end gap-3">
                     <select
                       className="h-9 rounded-md border bg-background px-3 text-sm"
                       onChange={(event) =>
@@ -2758,7 +2867,7 @@ export function ImageUploader({
                     </select>
                   </div>
 
-                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border p-3 text-sm">
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/70 bg-card/70 p-3 text-sm shadow-sm">
                     <div className="flex items-center gap-2">
                       <Coins aria-hidden="true" className="size-4" />
                       <span className="text-muted-foreground">
@@ -2805,7 +2914,7 @@ export function ImageUploader({
                   ) : null}
 
                   {promptStatus === "generating" ? (
-                    <div className="mt-4 flex items-center gap-2 rounded-md bg-secondary p-3 text-sm">
+                    <div className="waiting-surface animate-fade-slide-up mt-4 flex items-center gap-2 rounded-lg bg-secondary/75 p-3 text-sm">
                       <Loader2
                         aria-hidden="true"
                         className="size-4 animate-spin"
@@ -2826,10 +2935,73 @@ export function ImageUploader({
                     </p>
                   ) : null}
 
+                  {visiblePromptEntries.length ? (
+                    <div className="mt-4 grid max-h-[24rem] gap-3 overflow-auto pr-1">
+                      {visiblePromptEntries.map((prompt) => (
+                        <div
+                          className="interactive-card rounded-xl border border-border/70 bg-secondary/70 p-3"
+                          key={prompt.id}
+                        >
+                          <div className="mb-2 flex items-center justify-between gap-3">
+                            <h4 className="text-sm font-medium">
+                              {prompt.id} · {prompt.title}
+                            </h4>
+                            <Button
+                              onClick={() =>
+                                navigator.clipboard.writeText(prompt.prompt)
+                              }
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                            >
+                              <Copy aria-hidden="true" />
+                              {dictionary.common.copy}
+                            </Button>
+                          </div>
+                          <textarea
+                            className="max-h-48 min-h-28 w-full resize-y rounded-lg border bg-background/85 px-3 py-2 text-xs leading-5 text-foreground shadow-inner transition-colors focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20"
+                            onChange={(event) =>
+                              updatePromptEntryPrompt(
+                                prompt.id,
+                                event.target.value,
+                              )
+                            }
+                            value={prompt.prompt}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </CollapsibleSection>
+
                   {prompts ? (
-                    <div className="mt-4 space-y-3">
+                    <CollapsibleSection
+                      collapsed={isImageGenerationCollapsed}
+                      description={
+                        generationMode === "detail"
+                          ? dictionary.imageUploader.detailPageDescription
+                          : dictionary.imageUploader.aiImageGenerationDescription
+                      }
+                      meta={
+                        imageQueueStatus === "queueing" ||
+                        imageQueueStatus === "processing" ||
+                        detailPageExportStatus === "exporting" ? (
+                          <Loader2
+                            aria-hidden="true"
+                            className="size-3 animate-spin"
+                          />
+                        ) : generatedImageJobs.length ? (
+                          `${generatedImageJobs.length}`
+                        ) : null
+                      }
+                      onToggle={() =>
+                        setIsImageGenerationCollapsed((current) => !current)
+                      }
+                      title={dictionary.imageUploader.aiImageGeneration}
+                    >
+                    <div className="space-y-3">
                       {isMainMode ? (
-                      <div className="rounded-md border p-3">
+                      <div className="animate-fade-slide-up rounded-xl border border-border/80 bg-background/60 p-4">
                         <div className="flex flex-wrap items-center justify-between gap-3">
                           <div>
                             <h4 className="text-sm font-medium">
@@ -2927,7 +3099,7 @@ export function ImageUploader({
 
                         {!isGenerationPanelMinimized &&
                         imageQueueStatus === "queueing" ? (
-                          <div className="mt-4 flex items-center gap-2 rounded-md bg-secondary p-3 text-sm">
+                          <div className="waiting-surface mt-4 flex items-center gap-2 rounded-md bg-secondary p-3 text-sm">
                             <Clock3 aria-hidden="true" className="size-4" />
                             {dictionary.imageUploader.queueing}
                           </div>
@@ -2943,7 +3115,7 @@ export function ImageUploader({
 
                         {!isGenerationPanelMinimized &&
                         imageQueueStatus === "processing" ? (
-                          <div className="mt-4 flex items-center gap-2 rounded-md bg-secondary p-3 text-sm">
+                          <div className="waiting-surface mt-4 flex items-center gap-2 rounded-md bg-secondary p-3 text-sm">
                             <Loader2
                               aria-hidden="true"
                               className="size-4 animate-spin"
@@ -2993,10 +3165,10 @@ export function ImageUploader({
                         ) : null}
 
                         {!isGenerationPanelMinimized && generatedImageJobs.length ? (
-                          <div className="mt-4 grid gap-3">
+                          <div className="mt-4 grid max-h-[34rem] gap-3 overflow-auto pr-1">
                             {generatedImageJobs.map((job) => (
                               <div
-                                className="rounded-md bg-secondary p-3"
+                                className="interactive-card rounded-xl border border-border/70 bg-secondary/70 p-3"
                                 key={job.id}
                               >
                                 <div className="mb-3 flex items-center justify-between gap-3">
@@ -3091,7 +3263,7 @@ export function ImageUploader({
 
                                 {job.public_url && job.status === "completed" ? (
                                   <button
-                                    className="block w-full cursor-zoom-in rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                                    className="image-preview-trigger group block w-full cursor-zoom-in rounded-lg p-1 focus:outline-none focus:ring-2 focus:ring-primary"
                                     onClick={() =>
                                       openImagePreview({
                                         alt: dictionary.imageUploader.generatedImageAlt(
@@ -3106,7 +3278,7 @@ export function ImageUploader({
                                       alt={dictionary.imageUploader.generatedImageAlt(
                                         getGeneratedImageLabel(job),
                                       )}
-                                      className="max-h-80 w-full rounded-md object-contain"
+                                      className="max-h-80 w-full rounded-md object-contain transition-transform duration-200 group-hover:scale-[1.01]"
                                       height={320}
                                       src={job.public_url}
                                       width={512}
@@ -3127,7 +3299,7 @@ export function ImageUploader({
                       ) : null}
 
                       {isDetailMode ? (
-                      <div className="rounded-md border p-3">
+                      <div className="animate-fade-slide-up rounded-xl border border-border/80 bg-background/60 p-4">
                         <div className="flex flex-wrap items-center justify-between gap-3">
                           <div>
                             <h4 className="text-sm font-medium">
@@ -3263,14 +3435,14 @@ export function ImageUploader({
                           ) : null}
 
                           {imageQueueStatus === "queueing" ? (
-                            <div className="flex items-center gap-2 rounded-md bg-secondary p-3 text-sm">
+                            <div className="waiting-surface flex items-center gap-2 rounded-md bg-secondary p-3 text-sm">
                               <Clock3 aria-hidden="true" className="size-4" />
                               {dictionary.imageUploader.queueing}
                             </div>
                           ) : null}
 
                           {imageQueueStatus === "processing" ? (
-                            <div className="flex items-center gap-2 rounded-md bg-secondary p-3 text-sm">
+                            <div className="waiting-surface flex items-center gap-2 rounded-md bg-secondary p-3 text-sm">
                               <Loader2
                                 aria-hidden="true"
                                 className="size-4 animate-spin"
@@ -3319,10 +3491,10 @@ export function ImageUploader({
                           ) : null}
 
                           {isLongDetailMode && generatedImageJobs.length ? (
-                            <div className="grid gap-3">
+                            <div className="grid max-h-[34rem] gap-3 overflow-auto pr-1">
                               {generatedImageJobs.map((job) => (
                                 <div
-                                  className="rounded-md bg-secondary p-3"
+                                  className="interactive-card rounded-xl border border-border/70 bg-secondary/70 p-3"
                                   key={job.id}
                                 >
                                   <div className="mb-3 flex items-center justify-between gap-3">
@@ -3379,7 +3551,7 @@ export function ImageUploader({
                                         {dictionary.dashboard.download}
                                       </Button>
                                       <button
-                                        className="block w-full cursor-zoom-in rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                                        className="image-preview-trigger group block w-full cursor-zoom-in rounded-lg p-1 focus:outline-none focus:ring-2 focus:ring-primary"
                                         onClick={() =>
                                           openImagePreview({
                                             alt: dictionary.imageUploader.generatedImageAlt(
@@ -3394,7 +3566,7 @@ export function ImageUploader({
                                           alt={dictionary.imageUploader.generatedImageAlt(
                                             getGeneratedImageLabel(job),
                                           )}
-                                          className="max-h-80 w-full rounded-md object-contain"
+                                          className="max-h-80 w-full rounded-md object-contain transition-transform duration-200 group-hover:scale-[1.01]"
                                           height={320}
                                           src={job.public_url}
                                           width={512}
@@ -3421,7 +3593,7 @@ export function ImageUploader({
 
                             return (
                               <div
-                                className="rounded-md bg-secondary p-3"
+                                className="interactive-card rounded-xl border border-border/70 bg-secondary/70 p-3"
                                 key={module.id}
                               >
                                 <div className="flex items-start justify-between gap-3">
@@ -3483,7 +3655,7 @@ export function ImageUploader({
                                       {dictionary.dashboard.download}
                                     </Button>
                                     <button
-                                      className="mt-3 block w-full cursor-zoom-in rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                                      className="image-preview-trigger group mt-3 block w-full cursor-zoom-in rounded-lg p-1 focus:outline-none focus:ring-2 focus:ring-primary"
                                       onClick={() =>
                                         openImagePreview({
                                           alt: dictionary.imageUploader.detailPageModuleAlt(
@@ -3498,7 +3670,7 @@ export function ImageUploader({
                                         alt={dictionary.imageUploader.detailPageModuleAlt(
                                           module.id,
                                         )}
-                                        className="max-h-80 w-full rounded-md object-contain"
+                                        className="max-h-80 w-full rounded-md object-contain transition-transform duration-200 group-hover:scale-[1.01]"
                                         height={320}
                                         src={job.public_url}
                                         width={512}
@@ -3519,7 +3691,7 @@ export function ImageUploader({
                         ) : null}
 
                         {detailPageExportStatus === "exporting" ? (
-                          <div className="mt-4 flex items-center gap-2 rounded-md bg-secondary p-3 text-sm">
+                          <div className="waiting-surface mt-4 flex items-center gap-2 rounded-md bg-secondary p-3 text-sm">
                             <Loader2
                               aria-hidden="true"
                               className="size-4 animate-spin"
@@ -3536,62 +3708,22 @@ export function ImageUploader({
                       </div>
                       ) : null}
 
-                      {visiblePromptEntries.length ? (
-                        <div className="grid gap-3">
-                          {visiblePromptEntries.map((prompt) => (
-                            <div
-                              className="rounded-md bg-secondary p-3"
-                              key={prompt.id}
-                            >
-                              <div className="mb-2 flex items-center justify-between gap-3">
-                                <h4 className="text-sm font-medium">
-                                  {prompt.id} · {prompt.title}
-                                </h4>
-                                <Button
-                                  onClick={() =>
-                                    navigator.clipboard.writeText(prompt.prompt)
-                                  }
-                                  size="sm"
-                                  type="button"
-                                  variant="outline"
-                                >
-                                  <Copy aria-hidden="true" />
-                                  {dictionary.common.copy}
-                                </Button>
-                              </div>
-                              <textarea
-                                className="min-h-44 w-full resize-y rounded-md border bg-background px-3 py-2 text-xs leading-5 text-foreground"
-                                onChange={(event) =>
-                                  updatePromptEntryPrompt(
-                                    prompt.id,
-                                    event.target.value,
-                                  )
-                                }
-                                value={prompt.prompt}
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
                     </div>
+                    </CollapsibleSection>
                   ) : null}
-                </div>
               </>
             ) : null}
-            <pre className="overflow-auto rounded-md bg-secondary p-3 text-xs leading-6">
-              {JSON.stringify(result, null, 2)}
-            </pre>
           </div>
         ) : null}
       </div>
       {previewImage ? (
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4"
+          className="preview-backdrop fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4"
           onClick={() => setPreviewImage(null)}
           role="presentation"
         >
           <div
-            className="relative flex max-h-full w-full max-w-6xl flex-col gap-3"
+            className="preview-content relative flex max-h-full w-full max-w-6xl flex-col gap-3"
             onClick={(event) => event.stopPropagation()}
             role="presentation"
           >
@@ -3606,11 +3738,21 @@ export function ImageUploader({
                 {dictionary.imageUploader.closePreview}
               </Button>
             </div>
-            <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto rounded-lg bg-background p-2">
+            <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-auto rounded-lg bg-background p-2">
+              {isPreviewImageLoading ? (
+                <div className="waiting-surface absolute inset-2 z-10 grid place-items-center rounded-lg bg-background/88 text-sm text-muted-foreground backdrop-blur">
+                  <span className="flex items-center gap-2">
+                    <Loader2 aria-hidden="true" className="size-4 animate-spin" />
+                    {dictionary.imageUploader.previewLoading}
+                  </span>
+                </div>
+              ) : null}
               <Image
                 alt={previewImage.alt}
-                className="max-h-[82vh] w-auto max-w-full object-contain"
+                className="preview-image max-h-[82vh] w-auto max-w-full object-contain"
                 height={1200}
+                onError={() => setIsPreviewImageLoading(false)}
+                onLoad={() => setIsPreviewImageLoading(false)}
                 src={previewImage.src}
                 width={1200}
               />
