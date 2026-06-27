@@ -9,6 +9,9 @@
     "start": "next start",
     "lint": "eslint .",
     "check:deployment": "node scripts/check-deployment.mjs",
+    "check:image-generation-resilience": "node scripts/check-image-generation-resilience.mjs",
+    "check:prompt-style": "node scripts/check-prompt-style.mjs",
+    "check:prompt-timeout": "node scripts/check-prompt-timeout.mjs",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [],

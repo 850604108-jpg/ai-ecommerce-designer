@@ -4,7 +4,17 @@ type OpenAIErrorPayload = {
   };
 };
 
-const retryableStatuses = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
+const retryableStatuses = new Set([
+  408,
+  409,
+  425,
+  429,
+  500,
+  502,
+  503,
+  504,
+  524,
+]);
 let nextOpenAIKeyIndex = 0;
 
 class OpenAIRequestFailure extends Error {
@@ -90,6 +100,30 @@ function getOpenAIProxyUrl() {
   ).trim();
 }
 
+function getOpenAIMaxAttempts() {
+  const parsed = Number.parseInt(process.env.OPENAI_MAX_ATTEMPTS || "", 10);
+
+  return Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), 5) : 3;
+}
+
+function getOpenAIBaseRetryDelayMs() {
+  const parsed = Number.parseInt(process.env.OPENAI_RETRY_DELAY_MS || "", 10);
+
+  return Number.isFinite(parsed) ? Math.min(Math.max(parsed, 250), 10_000) : 1500;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getRetryDelayMs(attempt: number) {
+  const baseDelay = getOpenAIBaseRetryDelayMs();
+  const backoff = baseDelay * 2 ** Math.max(attempt - 1, 0);
+  const jitter = Math.round(Math.random() * baseDelay);
+
+  return Math.min(backoff + jitter, 30_000);
+}
+
 function isRetryableOpenAIStatus(status: number) {
   return retryableStatuses.has(status);
 }
@@ -118,6 +152,7 @@ async function fetchOpenAIWithKey(input: {
   apiKey: string;
   body: string;
   proxyUrl: string;
+  signal?: AbortSignal;
   url: string;
 }) {
   const init = {
@@ -127,6 +162,7 @@ async function fetchOpenAIWithKey(input: {
       "Content-Type": "application/json",
     },
     body: input.body,
+    signal: input.signal,
   } satisfies RequestInit;
 
   if (input.proxyUrl) {
@@ -137,6 +173,7 @@ async function fetchOpenAIWithKey(input: {
       headers: init.headers as Record<string, string>,
       body: init.body as string,
       dispatcher: new ProxyAgent(input.proxyUrl),
+      signal: input.signal,
     })) as unknown as Response;
   }
 
@@ -146,18 +183,25 @@ async function fetchOpenAIWithKey(input: {
 export async function openAIFetch<TPayload>(
   path: string,
   body: Record<string, unknown>,
+  options: { signal?: AbortSignal } = {},
 ) {
   const proxyUrl = getOpenAIProxyUrl();
   const url = `${getOpenAIBaseUrl()}/${path.replace(/^\/+/, "")}`;
   const requestBody = JSON.stringify(body);
   const apiKeys = getOpenAIApiKeys();
+  const maxAttempts = getOpenAIMaxAttempts();
+  const totalAttempts = apiKeys.length * maxAttempts;
   let lastError: Error | null = null;
 
   if (!apiKeys.length) {
     throw new Error("Missing OPENAI_API_KEY.");
   }
 
-  for (let attempt = 0; attempt < apiKeys.length; attempt += 1) {
+  for (let attempt = 0; attempt < totalAttempts; attempt += 1) {
+    if (options.signal?.aborted) {
+      throw lastError || new Error("OpenAI API request aborted.");
+    }
+
     const apiKey = getNextOpenAIApiKey();
 
     try {
@@ -165,6 +209,7 @@ export async function openAIFetch<TPayload>(
         apiKey,
         body: requestBody,
         proxyUrl,
+        signal: options.signal,
         url,
       });
       const responseText = await response.text();
@@ -181,8 +226,9 @@ export async function openAIFetch<TPayload>(
 
         if (
           retryable &&
-          attempt < apiKeys.length - 1
+          attempt < totalAttempts - 1
         ) {
+          await sleep(getRetryDelayMs(attempt + 1));
           continue;
         }
 
@@ -201,7 +247,8 @@ export async function openAIFetch<TPayload>(
           `OpenAI API returned a non-JSON response (${response.status}, ${contentType}) for ${path}. ${preview}`,
         );
 
-        if (attempt < apiKeys.length - 1) {
+        if (attempt < totalAttempts - 1) {
+          await sleep(getRetryDelayMs(attempt + 1));
           continue;
         }
 
@@ -213,6 +260,10 @@ export async function openAIFetch<TPayload>(
           ? error
           : new Error("OpenAI API request failed.");
 
+      if (options.signal?.aborted) {
+        throw lastError;
+      }
+
       if (
         error instanceof OpenAIRequestFailure &&
         !error.retryable
@@ -220,7 +271,8 @@ export async function openAIFetch<TPayload>(
         throw error;
       }
 
-      if (attempt < apiKeys.length - 1) {
+      if (attempt < totalAttempts - 1) {
+        await sleep(getRetryDelayMs(attempt + 1));
         continue;
       }
     }

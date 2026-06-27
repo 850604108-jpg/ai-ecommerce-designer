@@ -5,9 +5,23 @@ export const platformProfiles: Record<EcommercePlatform, PlatformPromptProfile> 
     taobao: {
       id: "taobao",
       label: "淘宝",
+      chinaPlatformSignals: [
+        "中国平台风格指纹：淘宝货架点击图，真实商品主体 + 轻量场景 + 清楚卖点标签",
+        "像手机淘宝搜索结果里的副图，不像 Amazon 白底说明图",
+      ],
       imageRules: [
         "电商副图风格，商品清晰占画面主体，背景干净但允许轻量场景化",
         "突出点击率和货架辨识度，避免杂乱装饰和夸张功效表达",
+      ],
+      thumbnailRules: [
+        "移动端缩略图先读到商品轮廓，再读到 1 个主卖点",
+        "标题区、标签区和商品边界必须分开，避免文字贴在产品上",
+      ],
+      visualDna: [
+        "明亮浅底商业摄影",
+        "温和但有点击力的中文短标题",
+        "少量圆角标签、细箭头、局部放大窗",
+        "生活化道具只服务品类理解",
       ],
       visualTone: ["明亮", "真实商业摄影", "适合移动端缩略图"],
       buyerConcernRules: [
@@ -31,9 +45,23 @@ export const platformProfiles: Record<EcommercePlatform, PlatformPromptProfile> 
     tmall: {
       id: "tmall",
       label: "天猫",
+      chinaPlatformSignals: [
+        "中国平台风格指纹：天猫品牌货架图，克制高级、品质证明、弱促销",
+        "像天猫旗舰店副图/A+模块，不像低价爆款图",
+      ],
       imageRules: [
         "品牌感更强的精品电商视觉，商品质感和可信度优先",
         "画面留白更克制，使用高级但不过度的字体和标注系统",
+      ],
+      thumbnailRules: [
+        "缩略图中商品质感和品牌信任感优先于信息密度",
+        "标题短、留白稳、标注少而精，避免大红大黄促销块",
+      ],
+      visualDna: [
+        "精致棚拍和柔和阴影",
+        "克制留白与高级灰/品牌强调色",
+        "细线 callout、规格卡片、材质局部",
+        "像品牌说明书的中文层级",
       ],
       visualTone: ["品牌化", "精致棚拍", "高信任感"],
       buyerConcernRules: [
@@ -57,9 +85,23 @@ export const platformProfiles: Record<EcommercePlatform, PlatformPromptProfile> 
     pinduoduo: {
       id: "pinduoduo",
       label: "拼多多",
+      chinaPlatformSignals: [
+        "中国平台风格指纹：拼多多强点击副图，大字利益点 + 直接证明 + 实用价值",
+        "像拼多多货架上能快速说明划算/耐用/容量的图，不像品牌大片",
+      ],
       imageRules: [
         "货架冲击力强，核心利益点在缩略图中一眼可读",
         "突出实用、数量、耐用、省心等明确购买理由",
+      ],
+      thumbnailRules: [
+        "缩略图必须先读到 1 个粗体中文利益结论",
+        "高对比信息块可以更明显，但每张图只放一个主结论",
+      ],
+      visualDna: [
+        "高对比标题块",
+        "规格/容量/数量信息卡",
+        "前后对比、全家福、耐用细节",
+        "直接、实用、少留白",
       ],
       visualTone: ["高对比", "强信息密度", "实用可信"],
       buyerConcernRules: [
@@ -83,9 +125,23 @@ export const platformProfiles: Record<EcommercePlatform, PlatformPromptProfile> 
     jd: {
       id: "jd",
       label: "京东",
+      chinaPlatformSignals: [
+        "中国平台风格指纹：京东理性参数图，专业可信、规格清楚、结构证明",
+        "像京东商详/副图里的参数说明，不像情绪化种草封面",
+      ],
       imageRules: [
         "偏标准化和可信赖的电商视觉，商品参数与品质证明清楚",
         "画面干净，技术规格、材质、售后信任点可视化",
+      ],
+      thumbnailRules: [
+        "缩略图中商品完整度和参数区层级清楚",
+        "数字、规格、结构标注集中成组，缺失参数只能示意",
+      ],
+      visualDna: [
+        "清爽技术感版式",
+        "参数块、尺寸线、结构 callout",
+        "蓝白/中性色专业信息区",
+        "理性标题和表格化证明",
       ],
       visualTone: ["专业", "清爽", "参数可信"],
       buyerConcernRules: [
@@ -109,9 +165,23 @@ export const platformProfiles: Record<EcommercePlatform, PlatformPromptProfile> 
     douyin: {
       id: "douyin",
       label: "抖音电商",
+      chinaPlatformSignals: [
+        "中国平台风格指纹：抖音电商封面图，强钩子、真实动作、结果感",
+        "像短视频购物封面/直播间商品卡，不像静态白底参数图",
+      ],
       imageRules: [
         "短视频电商封面感，强调真实使用瞬间和停留率",
         "画面有动作、有结果、有情绪，但商品必须完整可辨认",
+      ],
+      thumbnailRules: [
+        "移动端第一眼要有动作或结果钩子，同时商品不能太小",
+        "标题像封面短句，0-2 条即可，必须避开手部和产品主体",
+      ],
+      visualDna: [
+        "短视频封面构图",
+        "动作瞬间、结果对比、手持尺度",
+        "口语化中文钩子标题",
+        "更强前景层次和动态箭头",
       ],
       visualTone: ["真实生活流", "强钩子", "动态感"],
       buyerConcernRules: [
@@ -135,9 +205,23 @@ export const platformProfiles: Record<EcommercePlatform, PlatformPromptProfile> 
     kuaishou: {
       id: "kuaishou",
       label: "快手电商",
+      chinaPlatformSignals: [
+        "中国平台风格指纹：快手电商真实导购图，接地气、好用耐用、场景可信",
+        "像真实主播讲解商品的截图感，不像奢华精修大片",
+      ],
       imageRules: [
         "强调真实、耐用、接地气的使用证明",
         "减少精修距离感，让用户感到商品好用、可信、划算",
+      ],
+      thumbnailRules: [
+        "缩略图应先看到真实商品和使用关系，再看到直白卖点",
+        "标注朴素清楚，避免过度高级留白导致不接地气",
+      ],
+      visualDna: [
+        "真实生活/工作台场景",
+        "直白中文卖点标签",
+        "手部使用、耐用细节、前后状态",
+        "朴素可信的导购说明感",
       ],
       visualTone: ["真实", "生活化", "朴素可信"],
       buyerConcernRules: [
@@ -161,9 +245,23 @@ export const platformProfiles: Record<EcommercePlatform, PlatformPromptProfile> 
     wechat: {
       id: "wechat",
       label: "微信小店",
+      chinaPlatformSignals: [
+        "中国平台风格指纹：微信小店私域转化图，温和可信、解释清楚、适合社群传播",
+        "像朋友圈/小店商品说明图，不像强刺激平台爆款图",
+      ],
       imageRules: [
         "适合私域转化的温和商品图，重视信任、质感和解释清楚",
         "画面不宜过度刺激，适合朋友圈、小店和社群传播",
+      ],
+      thumbnailRules: [
+        "缩略图要温和清楚，商品和使用方法比强钩子更重要",
+        "文字像导购解释，留白舒适，不制造信息焦虑",
+      ],
+      visualDna: [
+        "干净生活方式背景",
+        "温和标题和少量解释标签",
+        "步骤/FAQ/适用人群式信息",
+        "私域信任感与舒适留白",
       ],
       visualTone: ["温和", "可信", "干净生活方式"],
       buyerConcernRules: [

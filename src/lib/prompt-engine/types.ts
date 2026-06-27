@@ -80,7 +80,10 @@ export type DetailPageModulePrompt = {
 export type PlatformPromptProfile = {
   id: EcommercePlatform;
   label: string;
+  chinaPlatformSignals: string[];
   imageRules: string[];
+  thumbnailRules: string[];
+  visualDna: string[];
   visualTone: string[];
   buyerConcernRules: string[];
   layoutRules: string[];

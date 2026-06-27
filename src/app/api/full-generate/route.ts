@@ -401,13 +401,15 @@ export async function POST(request: Request) {
       category: recognition.category,
       highlights: recognition.highlights,
     };
+    const platformProfile = getPlatformProfile(platform);
     const deterministicPrompts = generatePromptSet(promptInput, { platform });
     const prompts =
       process.env.OPENAI_PROMPT_ENGINE_ENABLED === "false"
         ? deterministicPrompts
         : await enhancePromptSetWithOpenAI({
             product: promptInput,
-            platformLabel: getPlatformProfile(platform).label,
+            platformLabel: platformProfile.label,
+            platformProfile,
             prompts: deterministicPrompts,
           });
 

@@ -54,6 +54,7 @@ const allowedTypes = new Set([
 
 const allowedExtensions = new Set(["jpg", "jpeg", "png", "webp"]);
 const promptGenerationCreditCost = 3;
+const imageGenerationConcurrency = 1;
 type UploadResult = {
   imageUrl: string;
   recognition?: ProductRecognitionResult;
@@ -119,6 +120,7 @@ type ImageUploaderGenerationDraft = {
   progress: number;
   promptError: string;
   promptStatus: PromptState;
+  promptWarning: string;
   prompts: PromptEngineOutput | null;
   recognitionStatus: RecognitionState;
   referenceImageNotes: string;
@@ -322,9 +324,19 @@ async function recognizeProductFromPayload(input: {
 }
 
 async function parseJsonResponse<T>(response: Response, fallbackError: string) {
-  return (await response.json().catch(() => ({ error: fallbackError }))) as T & {
-    error?: string;
-  };
+  const responseText = await response.text();
+
+  try {
+    return JSON.parse(responseText) as T & { error?: string };
+  } catch {
+    const preview = responseText.replace(/\s+/g, " ").trim().slice(0, 160);
+
+    return {
+      error: preview
+        ? `${fallbackError} HTTP ${response.status}: ${preview}`
+        : `${fallbackError} HTTP ${response.status}.`,
+    } as T & { error?: string };
+  }
 }
 
 function normalizePromptOutput(value: unknown): PromptEngineOutput {
@@ -474,6 +486,7 @@ async function generatePrompts(
   });
   const payload = await parseJsonResponse<{
     credit_balance?: number | null;
+    prompt_enhancement_warning?: string | null;
     prompts?: unknown;
   }>(response, "Prompt generation returned an invalid response.");
 
@@ -484,6 +497,10 @@ async function generatePrompts(
   return {
     creditBalance:
       typeof payload.credit_balance === "number" ? payload.credit_balance : null,
+    warning:
+      typeof payload.prompt_enhancement_warning === "string"
+        ? payload.prompt_enhancement_warning
+        : "",
     prompts: normalizePromptOutput(payload.prompts),
   };
 }
@@ -902,6 +919,7 @@ export function ImageUploader({
     useState<RecognitionState>("idle");
   const [promptStatus, setPromptStatus] = useState<PromptState>("idle");
   const [promptError, setPromptError] = useState("");
+  const [promptWarning, setPromptWarning] = useState("");
   const [selectedPlatform, setSelectedPlatform] =
     useState<EcommercePlatform>("taobao");
   const [generationMode, setGenerationMode] =
@@ -974,6 +992,7 @@ export function ImageUploader({
     setRecognitionStatus(draft.recognitionStatus || "idle");
     setPromptStatus(draft.promptStatus || "idle");
     setPromptError(draft.promptError || "");
+    setPromptWarning(draft.promptWarning || "");
     setSelectedPlatform(draft.selectedPlatform || "taobao");
     setGenerationMode(draft.generationMode || "main");
     setDetailGenerationMode(draft.detailGenerationMode || "modules");
@@ -1026,6 +1045,7 @@ export function ImageUploader({
       progress,
       promptError,
       promptStatus,
+      promptWarning,
       prompts,
       recognitionStatus,
       referenceImageNotes,
@@ -1057,6 +1077,7 @@ export function ImageUploader({
     progress,
     promptError,
     promptStatus,
+    promptWarning,
     prompts,
     recognitionStatus,
     referenceImageNotes,
@@ -1239,6 +1260,7 @@ export function ImageUploader({
     setRecognitionStatus("idle");
     setPromptStatus("idle");
     setPromptError("");
+    setPromptWarning("");
     setPrompts(null);
     setImageQueueStatus("idle");
     setImageQueueError("");
@@ -1281,6 +1303,7 @@ export function ImageUploader({
     setResult(null);
     setPromptStatus("idle");
     setPromptError("");
+    setPromptWarning("");
     setPrompts(null);
     setImageQueueStatus("idle");
     setImageQueueError("");
@@ -1349,6 +1372,7 @@ export function ImageUploader({
     setPrompts(null);
     setPromptStatus("idle");
     setPromptError("");
+    setPromptWarning("");
     setGeneratedImageJobs([]);
     setImageQueueStatus("idle");
     setImageQueueError("");
@@ -1374,6 +1398,7 @@ export function ImageUploader({
     setPrompts(null);
     setPromptStatus("idle");
     setPromptError("");
+    setPromptWarning("");
     setGeneratedImageJobs([]);
     setImageQueueStatus("idle");
     setImageQueueError("");
@@ -1396,6 +1421,7 @@ export function ImageUploader({
     setPrompts(null);
     setPromptStatus("idle");
     setPromptError("");
+    setPromptWarning("");
     setGeneratedImageJobs([]);
     setImageQueueStatus("idle");
     setImageQueueError("");
@@ -1420,6 +1446,7 @@ export function ImageUploader({
     setPrompts(null);
     setPromptStatus("idle");
     setPromptError("");
+    setPromptWarning("");
     setGeneratedImageJobs([]);
     setImageQueueStatus("idle");
     setImageQueueError("");
@@ -1439,6 +1466,7 @@ export function ImageUploader({
     setPrompts(null);
     setPromptStatus("idle");
     setPromptError("");
+    setPromptWarning("");
     setGeneratedImageJobs([]);
     setImageQueueStatus("idle");
     setImageQueueError("");
@@ -1453,6 +1481,7 @@ export function ImageUploader({
     setPrompts(null);
     setPromptStatus("idle");
     setPromptError("");
+    setPromptWarning("");
     setGeneratedImageJobs([]);
     setImageQueueStatus("idle");
     setImageQueueError("");
@@ -1499,6 +1528,7 @@ export function ImageUploader({
       setPrompts(null);
       setPromptStatus("idle");
       setPromptError("");
+      setPromptWarning("");
       setGeneratedImageJobs([]);
       setImageQueueStatus("idle");
       setImageQueueError("");
@@ -1520,6 +1550,7 @@ export function ImageUploader({
     setPrompts(null);
     setPromptStatus("idle");
     setPromptError("");
+    setPromptWarning("");
     setGeneratedImageJobs([]);
     setImageQueueStatus("idle");
     setImageQueueError("");
@@ -1534,6 +1565,7 @@ export function ImageUploader({
     setPrompts(null);
     setPromptStatus("idle");
     setPromptError("");
+    setPromptWarning("");
     setGeneratedImageJobs([]);
     setImageQueueStatus("idle");
     setImageQueueError("");
@@ -1545,6 +1577,7 @@ export function ImageUploader({
   ) {
     setPromptStatus("generating");
     setPromptError("");
+    setPromptWarning("");
     setPrompts(null);
 
     try {
@@ -1564,6 +1597,7 @@ export function ImageUploader({
       if (result.creditBalance !== null) {
         setCreditBalance(result.creditBalance);
       }
+      setPromptWarning(result.warning);
       setPromptStatus("success");
     } catch (promptGenerationError) {
       setPromptStatus("error");
@@ -1581,6 +1615,7 @@ export function ImageUploader({
     setImageQueueError("");
     setPromptStatus("idle");
     setPromptError("");
+    setPromptWarning("");
     setPrompts(null);
     setGeneratedImageJobs([]);
     setDetailPageExportStatus("idle");
@@ -1600,6 +1635,19 @@ export function ImageUploader({
       const nextJobs = [...currentJobs];
       nextJobs[existingIndex] = nextJob;
       return sortGeneratedImageJobs(nextJobs);
+    });
+  }
+
+  function replaceGeneratedImageJob(input: {
+    nextJob: GeneratedImageJob;
+    previousJobId: string;
+  }) {
+    setGeneratedImageJobs((currentJobs) => {
+      const nextJobs = currentJobs.filter(
+        (currentJob) => currentJob.id !== input.previousJobId,
+      );
+
+      return sortGeneratedImageJobs([...nextJobs, input.nextJob]);
     });
   }
 
@@ -1645,6 +1693,7 @@ export function ImageUploader({
         }
 
         if (attempt < 2) {
+          const previousJobId = activeJob.id;
           const imageType = activeJob.metadata?.image_type;
           const generationParams = activeJob.generation_params || {};
           const moduleId = getJobModuleId(activeJob);
@@ -1676,7 +1725,10 @@ export function ImageUploader({
           }
 
           activeJob = replacement.job;
-          upsertGeneratedImageJob({ ...activeJob, status: "processing" });
+          replaceGeneratedImageJob({
+            nextJob: { ...activeJob, status: "processing" },
+            previousJobId,
+          });
           await sleep(1200);
           continue;
         }
@@ -1779,7 +1831,7 @@ export function ImageUploader({
 
       const processedResults = await runWithConcurrency(
         queuedJobs,
-        2,
+        imageGenerationConcurrency,
         async (job) => processQueuedImageJobWithRetry(job),
       );
       const failedCount = processedResults.filter(
@@ -1884,18 +1936,8 @@ export function ImageUploader({
 
       const processedResults = await runWithConcurrency(
         queuedJobs,
-        2,
-        async (job) => {
-          upsertGeneratedImageJob({ ...job, status: "processing" });
-          const processed = await processGeneratedImage(job.id);
-
-          if (processed.creditBalance !== null) {
-            setCreditBalance(processed.creditBalance);
-          }
-
-          upsertGeneratedImageJob(processed.job);
-          return processed.job;
-        },
+        imageGenerationConcurrency,
+        async (job) => processQueuedImageJobWithRetry(job),
       );
 
       const failedCount = processedResults.filter(
@@ -2770,6 +2812,12 @@ export function ImageUploader({
                       />
                       {dictionary.imageUploader.generatingPrompts}
                     </div>
+                  ) : null}
+
+                  {promptWarning ? (
+                    <p className="mt-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+                      {promptWarning}
+                    </p>
                   ) : null}
 
                   {promptError ? (

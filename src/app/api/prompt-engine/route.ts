@@ -146,6 +146,7 @@ export async function POST(request: Request) {
     const detailStartId = normalizeDetailModuleId(body.detail_start_id, "AD-01");
     const detailEndId = normalizeDetailModuleId(body.detail_end_id, "AD-06");
     const resolvedPlatform = platform || "taobao";
+    const platformProfile = getPlatformProfile(resolvedPlatform);
     const deterministicPrompts = generatePromptSet(input, {
       detailEndId,
       detailGenerationMode,
@@ -165,7 +166,8 @@ export async function POST(request: Request) {
         ? deterministicPrompts
         : await enhancePromptSetWithOpenAI({
             product: input,
-            platformLabel: getPlatformProfile(resolvedPlatform).label,
+            platformLabel: platformProfile.label,
+            platformProfile,
             prompts: deterministicPrompts,
           }).catch((enhanceError) => {
             promptEnhancementWarning =

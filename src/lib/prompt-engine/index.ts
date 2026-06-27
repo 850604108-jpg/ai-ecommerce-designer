@@ -50,6 +50,8 @@ const listingRoleProfiles: Record<
   {
     title: string;
     buyerQuestion: string;
+    chinaLayoutFormula: string;
+    copyPattern: string;
     visualProof: string;
     layout: string;
   }
@@ -57,48 +59,72 @@ const listingRoleProfiles: Record<
   benefit: {
     title: "核心卖点/利益图",
     buyerQuestion: "这个商品解决什么核心问题，最值得购买的结果是什么。",
+    chinaLayoutFormula:
+      "中国电商利益图配方：1 个 4-9 字中文主结论 + 商品主体 55%-70% + 2-3 个短证明标签 + 留白中的行动结果暗示。",
+    copyPattern: "中文短标题要像淘宝/抖音/拼多多货架可读卖点，不写英文长句，不写详情页段落。",
     visualProof: "用一个核心利益点连接真实商品部位、包装信息、容量尺度或使用结果。",
     layout: "大标题或大卖点 + 商品主体 + 1-3 个短证明标签，移动端一眼可读。",
   },
   feature: {
     title: "功能拆解/结构证明图",
     buyerQuestion: "商品优势背后的结构、材质或机制是否可信。",
+    chinaLayoutFormula:
+      "中国电商结构图配方：完整商品 + 2-4 个连接式 callout + 局部放大窗/箭头，所有标注都指向真实可见部位。",
+    copyPattern: "中文标签用名词短语或动词短句，例如结构、材质、封口、工艺、功能路径，不写虚构参数。",
     visualProof: "用连接式 callout、放大窗、结构分层或功能路径指向真实可见部位。",
     layout: "商品完整视图居中或偏侧，周围 2-4 个结构证明点，避免无意义图标堆叠。",
   },
   dimension: {
     title: "尺寸/规格/适配图",
     buyerQuestion: "尺寸、容量、规格或适配关系是否符合我的使用需求。",
+    chinaLayoutFormula:
+      "中国电商规格图配方：商品完整图 + 规格卡片/尺寸线/容量参照 + 只展示用户已提供的确定数字。",
+    copyPattern: "中文规格表达要集中成组，数字缺失时只能写示意/参考，不可自动补全。",
     visualProof: "用尺寸线、手持/场景尺度、规格块或空间关系表达已提供的确定信息。",
     layout: "技术感清爽版式，数字/规格集中成组；缺失数字只能写示意，不能编造。",
   },
   lifestyle: {
     title: "场景使用图",
     buyerQuestion: "商品在真实生活中如何使用，适合什么人和什么场景。",
+    chinaLayoutFormula:
+      "中国电商场景图配方：真实使用环境 + 商品清晰占位 + 手部/动作/结果证明 + 0-2 条封面式短文案。",
+    copyPattern: "文案像短视频封面或导购说明，直接说场景结果，不能把产品淹没在氛围图里。",
     visualProof: "真实动作、手部使用、场景结果或前后状态证明商品价值。",
     layout: "商品与场景关系清楚，文字 0-2 条，优先让动作和环境证明卖点。",
   },
   detail: {
     title: "细节特写/局部放大图",
     buyerQuestion: "关键细节是否可靠，材质、包装、工艺或部件是否值得信任。",
+    chinaLayoutFormula:
+      "中国电商细节图配方：1 个大细节特写 + 1 个小全图定位 + 1-3 个连接标签，证明点必须真实可见。",
+    copyPattern: "中文标签只描述真实细节，如密封、纹理、接口、颗粒、材质，不添加未给出的认证。",
     visualProof: "使用真实局部特写、连接式放大窗或大细节 + 小全图关系。",
     layout: "1 个大细节或 2-4 个有价值细节，标签短，不做重复宏观网格。",
   },
   comparison: {
     title: "对比图",
     buyerQuestion: "与普通选择相比，本商品的差异在哪里。",
+    chinaLayoutFormula:
+      "中国电商对比图配方：左右/上下分屏 + 本品高亮 + 普通选项弱化 + 3-5 条真实差异，不出现竞品品牌。",
+    copyPattern: "中文对比词要克制，只能基于用户卖点或可见事实，不写攻击性和绝对化结论。",
     visualProof: "只比较用户提供或可从商品真实信息推导的差异，不出现竞品品牌。",
     layout: "左侧/上方突出本品，右侧普通选项灰化；3-5 行对比，避免虚假贬低。",
   },
   how_to_use: {
     title: "使用步骤/流程图",
     buyerQuestion: "商品如何使用、安装、打开、保存或完成任务。",
+    chinaLayoutFormula:
+      "中国电商步骤图配方：3-4 个编号步骤 + 同一真实商品状态变化 + 箭头流程 + 最终结果画面。",
+    copyPattern: "步骤文案短而像说明书，每步只写动作，不编造用户没有提供的使用条件。",
     visualProof: "用 3-4 个步骤、箭头、手部动作或状态变化展示真实流程。",
     layout: "步骤编号清楚，每格都显示同一真实商品状态变化，不夸张变形。",
   },
   package: {
     title: "包装/全家福图",
     buyerQuestion: "我会收到什么，套装内容或包装是否清楚。",
+    chinaLayoutFormula:
+      "中国电商包装图配方：商品/包装整齐陈列 + 已知内容短标签 + 可选开箱视角，不添加未知配件。",
+    copyPattern: "中文标签只说明用户已确认的数量、包装、容量或保质信息，未知内容留空。",
     visualProof: "展示已提供的商品、包装和明确存在的配件；未知配件不得添加。",
     layout: "1:1 平铺或整齐陈列，每个已知物品短标签，背景干净。",
   },
@@ -154,6 +180,15 @@ function buildBuyerConcernMap(input: PromptEngineInput) {
   });
 }
 
+function buildPlatformDnaBlock(profile: PlatformPromptProfile) {
+  return [
+    `平台视觉 DNA：${profile.visualDna.join("；")}`,
+    `中国平台风格指纹：${profile.chinaPlatformSignals.join("；")}`,
+    `移动端缩略图规则：${profile.thumbnailRules.join("；")}`,
+    "中国电商视觉硬要求：画面必须像当前中国平台的商品副图/详情图，中文标题、标签密度、标注形态、留白和信息层级都要服务手机端成交。",
+  ].join("\n");
+}
+
 function buildBaseContext(
   input: PromptEngineInput,
   profile: PlatformPromptProfile,
@@ -166,6 +201,7 @@ function buildBaseContext(
     `品类：${input.category}`,
     `核心卖点：${joinList(input.highlights)}`,
     `买家关注点地图：${buyerConcerns.join("；")}`,
+    buildPlatformDnaBlock(profile),
     `平台图片规则：${profile.imageRules.join("；")}`,
     `视觉语气：${profile.visualTone.join("、")}`,
     `平台买家问题：${profile.buyerConcernRules.join("；")}`,
@@ -398,9 +434,12 @@ function buildListingImagePrompts(
         `任务：生成 Listing 图片套组中的 ${id}（${roleProfile.title}），1:1 方图。`,
         [
           `买家问题：${roleProfile.buyerQuestion}`,
+          `角色版式配方：${roleProfile.chinaLayoutFormula}`,
           `视觉证明：${roleProfile.visualProof}`,
           `版式决策：${roleProfile.layout}`,
+          `中文文案策略：${roleProfile.copyPattern}`,
           "平台适配：结合当前平台的买家问题、视觉证明策略、版式决策和负面约束，不直接套用 Amazon 风格。",
+          "平台差异化：同一 AS 角色在淘宝/天猫/拼多多/京东/抖音/快手/微信小店上必须呈现不同视觉气质，不能输出通用海外电商模板。",
           "套组一致性：AS-01 到 AS-07 均为副图，必须保持同一真实商品、同一包装状态和一致的品牌/颜色识别；每张图只变化表达目的、版式、场景或证明方式。",
           "文字策略：所有可见文字必须短、清楚、与用户提供信息一致；没有提供的数字、认证、功效和比较结论不得出现。",
           "负面约束：不要产品变形、换包装、换标签、换颜色、添加不存在道具、生成竞品品牌、虚构参数、夸张光效或不可读小字。",

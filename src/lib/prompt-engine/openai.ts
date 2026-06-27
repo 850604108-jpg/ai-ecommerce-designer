@@ -7,6 +7,7 @@ import {
 
 import type {
   ListingImageRole,
+  PlatformPromptProfile,
   PromptEngineInput,
   PromptEngineOutput,
 } from "./types";
@@ -21,6 +22,17 @@ const listingImageRoles = [
   "how_to_use",
   "package",
 ] as const;
+
+function getPromptEnhancementTimeoutMs() {
+  const parsed = Number.parseInt(
+    process.env.OPENAI_PROMPT_ENGINE_TIMEOUT_MS || "",
+    10,
+  );
+
+  return Number.isFinite(parsed)
+    ? Math.min(Math.max(parsed, 5000), 120_000)
+    : 20_000;
+}
 
 const promptEngineSchema = {
   type: "object",
@@ -209,40 +221,71 @@ function coercePromptOutput(value: unknown, fallback: PromptEngineOutput) {
 export async function enhancePromptSetWithOpenAI(input: {
   product: PromptEngineInput;
   platformLabel: string;
+  platformProfile: PlatformPromptProfile;
   prompts: PromptEngineOutput;
 }) {
-  const payload = await openAIFetch<OpenAIResponsesPayload>("responses", {
-    model: defaultOpenAIPromptModel,
-    input: [
+  const abortController = new AbortController();
+  const timeout = setTimeout(
+    () => abortController.abort(),
+    getPromptEnhancementTimeoutMs(),
+  );
+
+  try {
+    const payload = await openAIFetch<OpenAIResponsesPayload>(
+      "responses",
       {
-        role: "system",
-        content:
-          "You are an ecommerce image prompt engine. Improve the supplied prompts for GPT Image API generation while preserving product truth, platform rules, JSON keys, and module count. Interpret any short user requirement as actionable visual constraints, integrate it into every relevant image prompt, and do not merely copy it as visible text unless explicitly requested. Do not invent specs, certifications, prices, brands, or claims that were not provided.",
-      },
-      {
-        role: "user",
-        content: [
+        model: defaultOpenAIPromptModel,
+        input: [
           {
-            type: "input_text",
-            text: JSON.stringify({
-              task: "Optimize these ecommerce image prompts for OpenAI GPT Image generation.",
-              platform: input.platformLabel,
-              product: input.product,
-              prompts: input.prompts,
-            }),
+            role: "system",
+            content:
+              "You are an ecommerce image prompt engine for Chinese marketplaces. Improve the supplied prompts for GPT Image API generation while preserving product truth, platform visual DNA, JSON keys, item order, AS/AD ids, and module count. Every AS prompt must feel native to the selected Chinese platform, not like a generic Amazon template. Keep explicit platform visual DNA, mobile thumbnail rules, Chinese short-copy strategy, role-specific layout formula, and product fidelity hard rules inside the prompt text. Interpret any short user requirement as actionable visual constraints, integrate it into every relevant image prompt, and do not merely copy it as visible text unless explicitly requested. Do not invent specs, certifications, prices, brands, accessories, packaging text, or claims that were not provided.",
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text: JSON.stringify({
+                  task: "Optimize these ecommerce image prompts for OpenAI GPT Image generation.",
+                  platform: input.platformLabel,
+                  platform_profile: input.platformProfile,
+                  product: input.product,
+                  prompts: input.prompts,
+                  mandatory_output_style:
+                    "Use concise Chinese ecommerce prompt text. Preserve explicit sections or sentences for 平台视觉 DNA, 中国平台风格指纹, 移动端缩略图规则, 角色版式配方, 中文文案策略, 产品还原硬规则. Do not remove these constraints during polishing.",
+                }),
+              },
+            ],
           },
         ],
+        text: {
+          format: {
+            type: "json_schema",
+            name: "ecommerce_prompt_engine_output",
+            strict: true,
+            schema: promptEngineSchema,
+          },
+        },
       },
-    ],
-    text: {
-      format: {
-        type: "json_schema",
-        name: "ecommerce_prompt_engine_output",
-        strict: true,
-        schema: promptEngineSchema,
+      {
+        signal: abortController.signal,
       },
-    },
-  });
+    );
 
-  return coercePromptOutput(JSON.parse(getOpenAIResponseText(payload)), input.prompts);
+    return coercePromptOutput(
+      JSON.parse(getOpenAIResponseText(payload)),
+      input.prompts,
+    );
+  } catch (error) {
+    if (abortController.signal.aborted) {
+      throw new Error(
+        `Prompt enhancement timed out after ${getPromptEnhancementTimeoutMs()}ms; returned deterministic prompts instead.`,
+      );
+    }
+
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }

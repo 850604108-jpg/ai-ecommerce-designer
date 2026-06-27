@@ -26,6 +26,17 @@ function supportsExplicitInputFidelity(model: string) {
   return !model.toLowerCase().startsWith("gpt-image-2");
 }
 
+function getImageGenerationTimeoutMs() {
+  const parsed = Number.parseInt(
+    process.env.OPENAI_IMAGE_GENERATION_TIMEOUT_MS || "",
+    10,
+  );
+
+  return Number.isFinite(parsed)
+    ? Math.min(Math.max(parsed, 30_000), 180_000)
+    : 90_000;
+}
+
 export async function generateImageWithOpenAI(options: ImageGenerationOptions) {
   const prompt = options.referenceImageUrl
     ? [
@@ -63,10 +74,29 @@ export async function generateImageWithOpenAI(options: ImageGenerationOptions) {
     }
   }
 
-  const payload = await openAIFetch<OpenAIImageGenerationResponse>(
-    path,
-    body,
+  const abortController = new AbortController();
+  const timeout = setTimeout(
+    () => abortController.abort(),
+    getImageGenerationTimeoutMs(),
   );
+
+  let payload: OpenAIImageGenerationResponse;
+
+  try {
+    payload = await openAIFetch<OpenAIImageGenerationResponse>(path, body, {
+      signal: abortController.signal,
+    });
+  } catch (error) {
+    if (abortController.signal.aborted) {
+      throw new Error(
+        `Image generation timed out after ${getImageGenerationTimeoutMs()}ms. Please retry this image.`,
+      );
+    }
+
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 
   const b64Json = payload.data?.[0]?.b64_json;
 
